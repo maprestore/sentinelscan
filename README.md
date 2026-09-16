@@ -18,6 +18,18 @@ node src/cli.mjs \
 
 Copy `scope.example.json` to a private file and replace the example origin. The target origin must appear exactly in `allowedOrigins`. Redirects to any other origin are blocked before the next request.
 
+## Real dashboard scans
+
+The GitHub Pages copy is static and only runs the safe fixture. To scan an authorized target from the dashboard, run the local server:
+
+```bash
+npm run dashboard
+```
+
+Open `http://127.0.0.1:4173`, enter the target, confirm that you own or are authorized to assess it, and run the scan. The dashboard calls the same bounded scanner as the CLI. It uses `GET` requests only, stays on the exact target origin, limits the crawl to 20 pages, and does not submit forms or attempt exploits.
+
+The local server binds to `127.0.0.1` by default. Do not expose it publicly.
+
 Save a machine-readable report:
 
 ```bash

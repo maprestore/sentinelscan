@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "scan": "node src/cli.mjs",
+    "dashboard": "node src/server.mjs",
     "test": "node --test"
   },
   "engines": {
