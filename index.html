@@ -192,6 +192,7 @@
   (() => { const badge = document.querySelector('[data-resolution-state]'); const events = [...document.querySelectorAll('[data-resolution-event]')]; const times = ['00:00', '00:12', '00:28', '00:41']; const sync = () => { const limit = { QUEUED: 0, ACTIVE: 1, VERIFYING: 2, RESOLVED: 3 }[badge.textContent] ?? 0; events.forEach((event, index) => { event.querySelector('time').textContent = index <= limit ? times[index] : '--:--'; }); }; new MutationObserver(sync).observe(badge, { childList: true, characterData: true, subtree: true }); sync(); })();
 </script>
 <script>
+  window.__initialRealReport = { scanner: { name: 'SentinelScan', version: '0.3.0', mode: 'bounded-passive' }, target: 'https://logiswift.delivery/', scope: { name: 'logiswift-delivery-authorized-scope', allowedOrigins: ['https://logiswift.delivery'] }, startedAt: '2026-09-16T16:53:06.723Z', finishedAt: '2026-09-16T16:53:08.732Z', limits: { maxPages: 20, maxRedirects: 5, maxResponseBytes: 1000000, timeoutMs: 8000, delayMs: 250 }, summary: { pagesScanned: 5, findings: 7, bySeverity: { low: 5, medium: 1, info: 1 }, attackPaths: 0, riskScore: 48, riskGrade: 'D' }, inventory: { totals: { links: 32, forms: 0, passwordForms: 0, scripts: 11, externalScripts: 0 } }, findings: [ { id: 'missing-content-security-policy', severity: 'low', title: 'Missing Content-Security-Policy', evidence: 'The response from https://logiswift.delivery/ does not advertise Content-Security-Policy.', location: 'https://logiswift.delivery/', remediation: 'Set a policy appropriate for the application and verify it does not break required functionality.', fingerprint: 'ec8d73c986299e50' }, { id: 'missing-referrer-policy', severity: 'low', title: 'Missing Referrer-Policy', evidence: 'The response from https://logiswift.delivery/ does not advertise Referrer-Policy.', location: 'https://logiswift.delivery/', remediation: 'Set a policy appropriate for the application and verify it does not break required functionality.', fingerprint: 'aca5cee0c2dc5505' }, { id: 'missing-permissions-policy', severity: 'low', title: 'Missing Permissions-Policy', evidence: 'The response from https://logiswift.delivery/ does not advertise Permissions-Policy.', location: 'https://logiswift.delivery/', remediation: 'Set a policy appropriate for the application and verify it does not break required functionality.', fingerprint: '0e40cae65f7661b5' }, { id: 'missing-x-content-type-options', severity: 'low', title: 'MIME sniffing protection is missing', evidence: 'X-Content-Type-Options is absent or is not set to nosniff.', location: 'https://logiswift.delivery/', remediation: 'Send X-Content-Type-Options: nosniff for browser-served resources.', fingerprint: '953f297adebb4eed' }, { id: 'missing-clickjacking-protection', severity: 'medium', title: 'Clickjacking protection is missing', evidence: 'Neither X-Frame-Options nor a CSP frame-ancestors directive was observed.', location: 'https://logiswift.delivery/', remediation: "Set a deliberate frame policy, such as frame-ancestors 'none' or a trusted embedding origin.", fingerprint: '8853d89c24e3479f' }, { id: 'technology-disclosure', severity: 'info', title: 'Server technology is disclosed', evidence: 'The response exposes: GitHub.com.', location: 'https://logiswift.delivery/', remediation: 'Remove or generalize unnecessary version and framework identifiers where practical.', fingerprint: 'a5221a4faee4dc47' }, { id: 'missing-hsts', severity: 'low', title: 'Strict transport security is missing', evidence: 'The HTTPS response does not include Strict-Transport-Security.', location: 'https://logiswift.delivery/', remediation: 'After confirming all relevant subdomains support HTTPS, add a carefully staged HSTS policy.', fingerprint: '091820222c4e57ce' } ], attackPaths: [], risk: { score: 48, grade: 'D', method: 'transparent-weighted-v1', factors: { findingScore: 48, attackPathBonus: 0 }, priority: ['8853d89c24e3479f', '953f297adebb4eed', 'ec8d73c986299e50', '0e40cae65f7661b5', 'aca5cee0c2dc5505', '091820222c4e57ce', 'a5221a4faee4dc47'] }, notes: ['This report contains observations from safe GET requests only.', 'A finding is a lead for review, not proof of exploitability.', 'Initial request resolved to https://logiswift.delivery/.'] };
   (() => {
     const targetForm = document.querySelector('#target-form');
     const targetInput = document.querySelector('#target-url');
@@ -207,7 +208,8 @@
     const setStatus = (text, tone = '') => { status.textContent = text; status.className = `runtime-status ${tone}`; };
     const updateRows = (report) => {
       const rows = [...document.querySelectorAll('[data-finding-row]')];
-      const items = report.findings.length ? report.findings : [{ id: 'no-findings', severity: 'info', title: 'No findings detected', evidence: 'The bounded scan returned no posture observations.', location: report.target, remediation: 'Keep the observed controls under review.', fingerprint: 'none' }];
+      const severityRank = { high: 0, medium: 1, low: 2, info: 3 };
+      const items = report.findings.length ? [...report.findings].sort((a, b) => (severityRank[a.severity] ?? 9) - (severityRank[b.severity] ?? 9)) : [{ id: 'no-findings', severity: 'info', title: 'No findings detected', evidence: 'The bounded scan returned no posture observations.', location: report.target, remediation: 'Keep the observed controls under review.', fingerprint: 'none' }];
       rows.forEach((row, index) => {
         const item = items[index];
         row.hidden = !item;
@@ -229,6 +231,7 @@
       const counts = { high: 0, medium: 0, low: 0 };
       report.findings.forEach((item) => { if (counts[item.severity] !== undefined) counts[item.severity] += 1; });
       document.querySelector('[data-workbench-count]').textContent = `${String(report.findings.length).padStart(2, '0')} OPEN / ${report.findings.length} TOTAL`;
+      const context = document.querySelector('[data-workbench-count]')?.parentElement; if (context?.lastChild?.nodeType === Node.TEXT_NODE) context.lastChild.textContent = ' / stable fingerprints / live report';
       document.querySelector('[data-finding-filter="all"]').textContent = `ALL / ${String(report.findings.length).padStart(2, '0')}`;
       document.querySelector('[data-finding-filter="high"]').textContent = `HIGH / ${String(counts.high).padStart(2, '0')}`;
       document.querySelector('[data-finding-filter="medium"]').textContent = `MED / ${String(counts.medium).padStart(2, '0')}`;
@@ -243,11 +246,11 @@
       document.querySelector('[data-risk]').textContent = report.risk.score;
       document.querySelector('[data-paths]').textContent = report.attackPaths.length;
       document.querySelector('[data-pages-scanned]').textContent = report.summary.pagesScanned;
-      const priority = report.findings.find((item) => item.severity === 'high') || report.findings[0];
-      if (priority) { document.querySelector('[data-resolution-title]').textContent = priority.title; document.querySelector('[data-resolution-note]').textContent = `${priority.evidence} Real evidence is queued for a safe remediation replay.`; }
+      const priority = report.findings.find((item) => item.severity === 'high') || report.findings.find((item) => item.severity === 'medium') || report.findings.find((item) => item.severity === 'low') || report.findings[0];
+      if (priority) { document.querySelector('[data-resolution-title]').textContent = priority.title; document.querySelector('[data-resolution-note]').textContent = `${priority.evidence} Real evidence is queued for a safe remediation replay.`; const kicker = document.querySelector('.resolution-kicker'); if (kicker?.firstChild) kicker.firstChild.textContent = `${priority.severity.toUpperCase()} PRIORITY FINDING `; }
       updateRows(report);
     };
-    const checkRuntime = async () => { try { const response = await fetch('/api/health', { cache: 'no-store' }); if (!response.ok) throw new Error('offline'); const health = await response.json(); if (!health.realScan) throw new Error('unavailable'); online = true; run.disabled = false; setStatus('LOCAL SCANNER ONLINE / GET ONLY', 'online'); } catch { setStatus('STATIC PAGE / RUN node src/server.mjs FOR REAL SCANS', 'error'); } };
+    const checkRuntime = async () => { try { const response = await fetch('/api/health', { cache: 'no-store' }); if (!response.ok) throw new Error('offline'); const health = await response.json(); if (!health.realScan) throw new Error('unavailable'); online = true; run.disabled = false; setStatus('LOCAL SCANNER ONLINE / GET ONLY', 'online'); } catch { setStatus(window.__initialRealReport ? 'REAL SNAPSHOT / START SERVER FOR LIVE SCANS' : 'STATIC PAGE / RUN node src/server.mjs FOR REAL SCANS', window.__initialRealReport ? 'online' : 'error'); } };
     run.addEventListener('click', async () => {
       if (!confirm.checked) { setStatus('AUTHORIZATION CONFIRMATION REQUIRED', 'error'); return; }
       let target;
@@ -263,6 +266,7 @@
       } catch (error) { setStatus(`SCAN ERROR / ${error.message}`, 'error'); } finally { run.disabled = !online; }
     });
     checkRuntime();
+    if (window.__initialRealReport) { applyReport(window.__initialRealReport); targetInput.value = window.__initialRealReport.target; setStatus('REAL SNAPSHOT / LOGISWIFT.DELIVERY / START SERVER FOR LIVE SCANS', 'online'); }
   })();
 </script>
 </body>
