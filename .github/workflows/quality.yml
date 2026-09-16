@@ -1,0 +1,40 @@
+name: Quality
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Node ${{ matrix.node-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20.x, 22.x]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Run tests
+        run: npm test
+      - name: Check module syntax
+        run: >-
+          node --check src/scanner.mjs &&
+          node --check src/cli.mjs &&
+          node --check src/scope.mjs &&
+          node --check src/scope-file.mjs &&
+          node --check src/baseline.mjs &&
+          node --check src/risk.mjs &&
+          node --check src/sarif.mjs

@@ -1,0 +1,6 @@
+reports/
+*.report.json
+node_modules/
+scope.local.json
+.env
+.env.*

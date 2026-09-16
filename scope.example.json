@@ -1,0 +1,10 @@
+{
+  "name": "authorized-production-scope",
+  "allowedOrigins": [
+    "https://your-authorized-site.example"
+  ],
+  "notes": [
+    "Replace the example origin before running.",
+    "List every origin that is explicitly included in the written assessment scope."
+  ]
+}
