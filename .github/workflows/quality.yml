@@ -34,7 +34,10 @@ jobs:
           node --check src/scanner.mjs &&
           node --check src/cli.mjs &&
           node --check src/scope.mjs &&
-          node --check src/scope-file.mjs &&
-          node --check src/baseline.mjs &&
-          node --check src/risk.mjs &&
-          node --check src/sarif.mjs
+           node --check src/scope-file.mjs &&
+           node --check src/baseline.mjs &&
+           node --check src/risk.mjs &&
+           node --check src/sarif.mjs &&
+           node --check src/infrastructure.mjs &&
+           node --check src/server.mjs &&
+           node --check src/html.mjs

@@ -6,7 +6,7 @@ export function toSarif(report) {
     name: item.title,
     shortDescription: { text: item.title },
     help: { text: item.remediation },
-    properties: { severity: item.severity },
+     properties: { severity: item.severity, confidence: item.confidence, category: item.category, status: item.status },
   }])).values()];
   const results = report.findings.map((item) => ({
     ruleId: item.id,

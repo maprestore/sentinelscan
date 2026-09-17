@@ -45,6 +45,7 @@ test("normalizeTarget accepts web URLs and rejects unsafe schemes", () => {
   assert.equal(normalizeTarget("https://example.test/a#fragment").href, "https://example.test/a");
   assert.throws(() => normalizeTarget("file:///tmp/test"), /http/);
   assert.throws(() => normalizeTarget("https://user:pass@example.test"), /embedded/);
+  assert.throws(() => normalizeTarget("https://example.test/?access_token=secret"), /credential-shaped/);
 });
 
 test("scan finds posture issues without submitting forms or leaving the origin", async (t) => {

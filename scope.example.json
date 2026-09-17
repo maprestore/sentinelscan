@@ -1,8 +1,11 @@
 {
   "name": "authorized-production-scope",
   "allowedOrigins": [
-    "https://your-authorized-site.example"
+    "https://your-authorized-site.example",
+    "https://*.assets.your-authorized-site.example"
   ],
+  "includePaths": [],
+  "excludePaths": ["/logout"],
   "notes": [
     "Replace the example origin before running.",
     "List every origin that is explicitly included in the written assessment scope."

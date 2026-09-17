@@ -20,6 +20,12 @@ export function compareReports(current, baseline) {
   const unchangedFindings = [...currentFindings.entries()]
     .filter(([fingerprint]) => baselineFindings.has(fingerprint))
     .map(([, item]) => item);
+  const changedFindings = unchangedFindings.map((item) => {
+    const previous = baselineFindings.get(item.fingerprint || `${item.id}|${item.location}`);
+    return previous?.severity !== item.severity ? { previous, current: item } : null;
+  }).filter(Boolean);
+  const currentScore = Number(current.risk?.score || 0);
+  const baselineScore = Number(baseline.risk?.score || 0);
 
   return {
     baselineTarget: baseline.target,
@@ -27,11 +33,20 @@ export function compareReports(current, baseline) {
     newFindings,
     resolvedFindings,
     unchangedFindings,
+    changedFindings,
     summary: {
       new: newFindings.length,
       resolved: resolvedFindings.length,
       unchanged: unchangedFindings.length,
-      status: newFindings.length ? "regressed" : resolvedFindings.length ? "improved" : "unchanged",
+      changed: changedFindings.length,
+      riskDelta: currentScore - baselineScore,
+      status: newFindings.length || changedFindings.some(({ current, previous }) => severityRank(current.severity) > severityRank(previous.severity))
+        ? "regressed"
+        : resolvedFindings.length || changedFindings.length ? "improved" : "unchanged",
     },
   };
+}
+
+function severityRank(value) {
+  return { info: 0, low: 1, medium: 2, high: 3 }[value] ?? 0;
 }

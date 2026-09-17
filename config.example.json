@@ -1,6 +1,13 @@
 {
   "maxPages": 20,
+  "maxResources": 40,
+  "maxRequests": 80,
+  "maxElapsedMs": 120000,
   "maxResponseBytes": 1000000,
   "timeoutMs": 8000,
-  "delayMs": 250
+  "delayMs": 250,
+  "checkInfrastructure": false,
+  "certificateTransparency": false,
+  "emailDomain": "",
+  "dkimSelectors": ["default", "google", "selector1", "selector2", "k1"]
 }

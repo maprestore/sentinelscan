@@ -23,10 +23,10 @@ Before using it:
 ```json
 {
   "name": "authorized-production-scope",
-  "allowedOrigins": ["https://your-authorized-site.example"]
+  "allowedOrigins": ["https://your-authorized-site.example", "https://*.assets.your-authorized-site.example"]
 }
 ```
 
-The workflow refuses an empty scope secret, and SentinelScan blocks the request if the input target is not an exact allowed origin. Redirects outside the scope are blocked as well.
+The workflow refuses an empty scope secret, and SentinelScan blocks the request if the input target is not in the allowed exact or wildcard scope. Redirects outside the scope or configured paths are blocked as well. Keep infrastructure and Certificate Transparency checks opt-in in CI unless they are included in the written assessment scope.
 
 The workflow uploads SARIF findings to GitHub Code Scanning. Keep the scope secret restricted to trusted repository maintainers and use a written authorization record for every target.

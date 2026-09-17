@@ -23,3 +23,12 @@ test("compareReports identifies regressions and resolved findings", () => {
   assert.equal(result.newFindings[0].id, "missing-permissions-policy");
   assert.equal(result.resolvedFindings[0].id, "missing-hsts");
 });
+
+test("baseline comparison reports severity and risk deltas", () => {
+  const baseline = { target: "https://example.test", findings: [item("same", "finding")], risk: { score: 20 } };
+  const current = { target: "https://example.test", findings: [{ ...item("same", "finding"), severity: "high" }], risk: { score: 55 } };
+  const result = compareReports(current, baseline);
+  assert.equal(result.summary.changed, 1);
+  assert.equal(result.summary.riskDelta, 35);
+  assert.equal(result.summary.status, "regressed");
+});

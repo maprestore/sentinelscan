@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "HTTPS origin included in SENTINEL_SCOPE_JSON"
+        description: "HTTP(S) target included in SENTINEL_SCOPE_JSON"
         required: true
         type: string
 
