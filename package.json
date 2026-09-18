@@ -1,0 +1,15 @@
+{
+  "name": "sentinelscan",
+  "version": "0.5.1",
+  "private": true,
+  "description": "A bounded, non-destructive web security posture scanner for authorized targets.",
+  "type": "module",
+  "scripts": {
+    "scan": "node src/cli.mjs",
+    "dashboard": "node src/server.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
