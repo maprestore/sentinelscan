@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="SentinelScan logo">
+  <rect width="128" height="128" rx="26" fill="#030507"/>
+  <rect x="1" y="1" width="126" height="126" rx="25" fill="none" stroke="#44e6f2" stroke-opacity=".35" stroke-width="2"/>
+  <g fill="none" stroke="#44e6f2" stroke-opacity=".45" stroke-width="2">
+    <circle cx="64" cy="64" r="42"/><circle cx="64" cy="64" r="26"/>
+    <path d="M64 16v96M16 64h96" stroke-opacity=".25"/>
+  </g>
+  <path d="M64 64 L106 64 A42 42 0 0 0 94 34 Z" fill="#b9ff4c" fill-opacity=".28"/>
+  <path d="M64 64 L94 34" stroke="#b9ff4c" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="64" cy="64" r="6" fill="#b9ff4c"/>
+  <circle cx="88" cy="84" r="4.5" fill="#ff4fd8"/>
+  <circle cx="42" cy="46" r="3.5" fill="#44e6f2"/>
+</svg>
