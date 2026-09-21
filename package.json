@@ -3,6 +3,7 @@
   "version": "0.5.0",
   "private": true,
   "description": "A bounded, non-destructive web security posture scanner for authorized targets.",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "scan": "node src/cli.mjs",
