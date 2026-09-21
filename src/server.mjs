@@ -24,15 +24,38 @@ function json(response, status, body) {
   send(response, status, JSON.stringify(body), "application/json; charset=utf-8");
 }
 
+/** A problem with the request itself (as opposed to a server fault). Carries the HTTP status to return. */
+class RequestError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.name = "RequestError";
+    this.status = status;
+  }
+}
+
 async function readJson(request) {
   let size = 0;
   const chunks = [];
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > MAX_BODY_BYTES) throw new Error("Request body is too large.");
+    if (size > MAX_BODY_BYTES) throw new RequestError(413, "Request body is too large.");
     chunks.push(chunk);
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  let body;
+  try {
+    body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new RequestError(400, "Request body must be valid JSON.");
+  }
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    throw new RequestError(400, "Request body must be a JSON object.");
+  }
+  return body;
+}
+
+function errorResponse(response, error) {
+  if (error instanceof RequestError) return json(response, error.status, { error: error.message });
+  return json(response, 500, { error: error instanceof Error ? error.message : "Server error." });
 }
 
 function boundedNumber(value, fallback, min, max) {
@@ -45,6 +68,16 @@ function hasActiveJob() {
 }
 
 function buildScanOptions(body, signal, onProgress) {
+  try {
+    return buildValidatedScanOptions(body, signal, onProgress);
+  } catch (error) {
+    // Everything this function rejects is a problem with what the caller sent.
+    if (error instanceof RequestError) throw error;
+    throw new RequestError(400, error instanceof Error ? error.message : "Invalid scan request.");
+  }
+}
+
+function buildValidatedScanOptions(body, signal, onProgress) {
   if (!body || body.confirmAuthorized !== true) throw new Error("Refusing to scan without explicit authorization confirmation.");
   const target = normalizeTarget(String(body.target || ""));
   const scope = normalizeScope(body.scope || { name: "dashboard-scope", allowedOrigins: [target.origin] });
@@ -123,7 +156,7 @@ async function handleScan(request, response) {
     const report = await runScan(body);
     return json(response, 200, report);
   } catch (error) {
-    return json(response, 400, { error: error instanceof Error ? error.message : "Scan failed." });
+    return errorResponse(response, error);
   } finally {
     scanInProgress = false;
   }
@@ -158,7 +191,7 @@ const server = createServer(async (request, response) => {
     }
     return json(response, 404, { error: "Not found." });
   } catch (error) {
-    return json(response, 500, { error: error instanceof Error ? error.message : "Server error." });
+    return errorResponse(response, error);
   }
 });
 

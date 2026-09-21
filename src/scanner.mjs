@@ -139,13 +139,58 @@ async function readBody(response, maxBytes, signal) {
   return { text: new TextDecoder().decode(bytes), truncated };
 }
 
+function abortError(signal) {
+  return signal?.reason || new DOMException("The scan was canceled.", "AbortError");
+}
+
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(abortError(signal));
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortError(signal));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * Enforces a minimum quiet gap between consecutive outbound requests.
+ *
+ * Every request the scanner makes (crawl pages, resources, each redirect hop,
+ * and the fixed well-known path checks) goes through fetchBounded(), which calls
+ * wait() before and done() after. The gap is measured from the end of one request
+ * to the start of the next, and waiting is cancelable through the scan signal.
+ */
+function createPacer(delayMs, signal) {
+  let readyAt = 0;
+  return {
+    async wait() {
+      if (!(delayMs > 0)) return;
+      let remaining = readyAt - Date.now();
+      while (remaining > 0) {
+        await sleep(remaining, signal);
+        remaining = readyAt - Date.now();
+      }
+    },
+    done() {
+      readyAt = Date.now() + delayMs;
+    },
+  };
+}
+
 async function fetchBounded(startUrl, options, controls = {}) {
   let current = new URL(startUrl);
   const chain = [];
   const requests = [];
 
   for (let hop = 0; hop <= options.maxRedirects; hop += 1) {
-    if (options.signal?.aborted) throw options.signal.reason || new DOMException("The scan was canceled.", "AbortError");
+    if (options.signal?.aborted) throw abortError(options.signal);
+    await controls.pacer?.wait();
     if (controls.consumeRequest && !controls.consumeRequest()) throw new ScanBudgetError("Maximum request budget reached.");
     assertInScope(current.href, options.scope);
     if ([...current.searchParams.keys()].some((key) => SENSITIVE_QUERY_KEYS.test(key))) throw new Error("Credential-shaped query parameter blocked; use authorized request headers instead.");
@@ -190,6 +235,7 @@ async function fetchBounded(startUrl, options, controls = {}) {
     } finally {
       clearTimeout(timeout);
       options.signal?.removeEventListener("abort", abortParent);
+      controls.pacer?.done();
     }
   }
 
@@ -690,14 +736,18 @@ async function checkWellKnownPaths(rootUrl, options, findings, controls = {}) {
     "/actuator/env",
   ];
   for (const path of paths) {
+    // Pacing can make this loop slow, so the wall-clock budget is re-checked per path.
+    if (controls.canContinue && !controls.canContinue()) throw new ScanBudgetError("Maximum scan duration reached.");
     const url = new URL(path, rootUrl);
     let result;
     try {
-      result = await fetchBounded(url.href, options, { consumeRequest: controls.consumeRequest });
+      result = await fetchBounded(url.href, options, { consumeRequest: controls.consumeRequest, pacer: controls.pacer });
       controls.requestLog?.push(...result.requests);
       controls.progress?.("metadata-completed", { url: url.href, status: result.response.status });
     } catch (error) {
-      if (error instanceof ScanBudgetError || error.name === "AbortError") throw error;
+      // A cancellation by the operator must stop the scan; a slow or failing
+      // well-known path must not.
+      if (error instanceof ScanBudgetError || options.signal?.aborted) throw error;
       continue;
     }
     if (result.response.status < 200 || result.response.status >= 300) continue;
@@ -856,13 +906,14 @@ export async function scan(target, overrides = {}) {
     return true;
   };
   const canContinue = () => {
-    if (options.signal?.aborted) throw options.signal.reason || new DOMException("The scan was canceled.", "AbortError");
+    if (options.signal?.aborted) throw abortError(options.signal);
     if (Date.now() - scanClock >= options.maxElapsedMs) {
       stopReason = "Maximum scan duration reached.";
       return false;
     }
     return true;
   };
+  const pacer = createPacer(options.delayMs, options.signal);
 
   const enqueue = (url, kind) => {
     const href = new URL(url).href;
@@ -886,23 +937,27 @@ export async function scan(target, overrides = {}) {
     let result;
     try {
       progress("request-started", { url: nextUrl, kind });
-      result = await fetchBounded(nextUrl, options, { consumeRequest });
+      result = await fetchBounded(nextUrl, options, { consumeRequest, pacer });
     } catch (error) {
       if (error instanceof ScanBudgetError) {
         stopReason = error.message;
         break;
       }
-      if (error.name === "AbortError") throw error;
-      requestLog.push({ url: nextUrl, status: null, elapsedMs: null, error: error.message });
+      // Only an operator cancellation ends the scan. A request that merely timed
+      // out is recorded as a finding and the scan carries on.
+      if (options.signal?.aborted) throw error;
+      const timedOut = error.name === "AbortError";
+      const failure = timedOut ? `The request timed out after ${options.timeoutMs} ms.` : error.message;
+      requestLog.push({ url: nextUrl, status: null, elapsedMs: null, error: failure });
       findings.push(finding(
         "request-failed",
         "info",
         "Request could not be completed",
-        error.name === "AbortError" ? "The request timed out." : error.message,
+        failure,
         nextUrl,
         "Verify the target is available and repeat the scan with an appropriate timeout.",
       ));
-      progress("request-failed", { url: nextUrl, error: error.message });
+      progress("request-failed", { url: nextUrl, error: failure });
       continue;
     }
 
@@ -987,15 +1042,14 @@ export async function scan(target, overrides = {}) {
       inventorySourceMaps,
       findings,
     });
-    if (queued.size && options.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, options.delayMs));
   }
 
   if (!stopReason && canContinue()) {
     try {
-      await checkWellKnownPaths(root, options, findings, { consumeRequest, requestLog, progress });
+      await checkWellKnownPaths(root, options, findings, { consumeRequest, requestLog, progress, pacer, canContinue });
     } catch (error) {
       if (error instanceof ScanBudgetError) stopReason = error.message;
-      else if (error.name === "AbortError") throw error;
+      else if (options.signal?.aborted) throw error;
     }
   }
   if (!stopReason && queued.size) stopReason = pages.length >= options.maxPages ? "Maximum page budget reached." : "Maximum resource budget reached.";
