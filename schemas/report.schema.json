@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelscan.example/schemas/report.schema.json",
+  "title": "SentinelScan report",
+  "type": "object",
+  "required": ["schemaVersion", "scanner", "target", "scope", "startedAt", "finishedAt", "limits", "summary", "findings", "attackPaths", "risk"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "scanner": { "type": "object", "required": ["name", "version", "mode"], "properties": { "name": { "type": "string" }, "version": { "type": "string" }, "mode": { "enum": ["bounded-passive", "bounded-rendered"] } }, "additionalProperties": true },
+    "target": { "type": "string", "format": "uri" },
+    "scope": { "$ref": "scope.schema.json" },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "finishedAt": { "type": "string", "format": "date-time" },
+    "limits": { "type": "object" },
+    "summary": { "type": "object", "required": ["findings", "actionableFindings", "suppressedFindings"], "properties": { "findings": { "type": "integer", "minimum": 0 }, "actionableFindings": { "type": "integer", "minimum": 0 }, "suppressedFindings": { "type": "integer", "minimum": 0 } }, "additionalProperties": true },
+    "pages": { "type": "array" },
+    "resources": { "type": "array" },
+    "requests": { "type": "array" },
+    "infrastructure": { "type": "object" },
+    "inventory": { "type": "object" },
+    "findings": { "type": "array", "items": { "$ref": "finding.schema.json" } },
+    "suppressions": { "$ref": "suppressions.schema.json" },
+    "attackPaths": { "type": "array" },
+    "risk": { "type": "object" },
+    "comparison": { "type": "object" },
+    "exitPolicy": { "type": "object" },
+    "notes": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}

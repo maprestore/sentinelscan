@@ -17,7 +17,7 @@ These workflows never contact a website.
 | --- | --- | --- |
 | **Quality** | Push to `main`/`master`, pull requests | Runs `npm test` and syntax checks on **Node.js 20 and 22** |
 | **CodeQL** | Push to `main`/`master`, pull requests, weekly (Mondays 03:23 UTC) | Read-only JavaScript security analysis |
-| **Dependabot** | Monthly | Proposes updates to pinned GitHub Action versions |
+| **Dependabot** | Monthly | Proposes updates to GitHub Action versions |
 
 ## The optional authorized scan
 
@@ -28,7 +28,7 @@ flowchart LR
     A[Operator clicks Run workflow<br/>and enters a target] --> B[Write scope from<br/>SENTINEL_SCOPE_JSON secret]
     B --> C{Secret empty?}
     C -->|yes| X[Fail before any request]
-    C -->|no| D["Bounded scan<br/>--format sarif"]
+    C -->|no| D["Bounded scan<br/>JSON + SARIF + exit policy"]
     D --> E{Target in scope?<br/>Redirects in scope?}
     E -->|no| Y[Blocked]
     E -->|yes| F[Upload SARIF to<br/>Code Scanning]
@@ -40,7 +40,8 @@ Key properties of the workflow:
 - 10-minute job timeout
 - Permissions limited to `contents: read` and `security-events: write`
 - Uses `--confirm-authorized`: **choosing Run workflow is your confirmation**, so restrict who can do it
-- Produces SARIF and uploads it to GitHub Code Scanning under the category `sentinelscan`
+- Produces JSON and SARIF from one scan without printing the private report to the job log, then uploads SARIF to GitHub Code Scanning under the category `sentinelscan`
+- Exposes manual `fail_on_severity` and `fail_on_baseline` inputs; policy failures use exit code `2`, and SARIF/artifacts still upload with `if: always()`
 
 ## Setup
 
@@ -67,10 +68,11 @@ The scope format is the same as the CLI's. See the [scope file reference](CLI.md
 
 | Protection | Detail |
 | --- | --- |
-| **No scope in source control** | The scope lives in an encrypted repository secret and is written to a git-ignored local file at run time |
+| **No scope in source control** | The scope lives in an encrypted repository secret and is written with mode `0600` only inside the scan step, then removed before SARIF upload |
 | **Empty scope refused** | The workflow fails if the secret is empty |
 | **Scope enforced by the scanner** | A target outside the allowed exact or wildcard origins is blocked, and so are redirects outside the scope or configured paths |
 | **Bounded** | Default budgets apply: 20 pages, 40 resources, 80 requests, 120 seconds |
+| **Private-network gate** | Non-public DNS and literal addresses are blocked unless an explicit local-only option is used; the workflow does not enable it |
 | **Opt-in extras** | Infrastructure and Certificate Transparency checks are **off** in CI. Enable them only if they are inside the written assessment scope |
 | **Least privilege** | The token can read contents and write security events, nothing else |
 
@@ -87,7 +89,9 @@ SARIF findings appear in the repository's **Security** tab under **Code scanning
 | medium | `warning` |
 | low, info | `note` |
 
-Each result carries the finding's stable fingerprint in the SARIF `fingerprints.sentinelscan` field, so the same issue can be matched across runs.
+Each result carries the finding's stable fingerprint in SARIF `partialFingerprints.sentinelscan`, plus an evidence fingerprint for duplicate instances, so the same issue can be matched across runs.
+
+The JSON artifact also contains `exitPolicy`, actionable/suppressed counts, and any baseline comparison. The workflow has no baseline acquisition by default; supply a reviewed JSON baseline in a controlled workflow change before enabling a baseline policy.
 
 ## Troubleshooting
 

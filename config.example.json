@@ -6,8 +6,17 @@
   "maxResponseBytes": 1000000,
   "timeoutMs": 8000,
   "delayMs": 250,
+  "maxRedirects": 5,
   "checkInfrastructure": false,
   "certificateTransparency": false,
+  "allowPrivateNetwork": false,
+  "rendered": false,
+  "confirmRendered": false,
+  "exitPolicy": {
+    "failOnSeverity": null,
+    "failOnBaseline": "never",
+    "requireBaseline": false
+  },
   "emailDomain": "",
   "dkimSelectors": ["default", "google", "selector1", "selector2", "k1"]
 }

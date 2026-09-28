@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { spawn } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 function startFixture() {
   const server = http.createServer((request, response) => {
@@ -46,6 +49,7 @@ test("dashboard exposes an asynchronous scan job with progress and a final repor
     body: JSON.stringify({
       target,
       confirmAuthorized: true,
+      allowPrivateNetwork: true,
       maxPages: 2,
       maxResources: 1,
       maxRequests: 20,
@@ -102,6 +106,9 @@ test("dashboard reports invalid requests as client errors, not server faults", a
     const badHeaders = await post(path, { target, confirmAuthorized: true, authHeaders: { host: "evil.example" } });
     assert.equal(badHeaders.status, 400, `${path}: forbidden auth header`);
 
+    const badEmailDomain = await post(path, { target, confirmAuthorized: true, emailDomain: "https://evil.example" });
+    assert.equal(badEmailDomain.status, 400, `${path}: emailDomain must be a hostname`);
+
     const notJson = await post(path, "not json", true);
     assert.equal(notJson.status, 400, `${path}: malformed JSON`);
     assert.match(notJson.body.error, /valid JSON/);
@@ -117,4 +124,90 @@ test("dashboard reports invalid requests as client errors, not server faults", a
   assert.equal(unknownJob.status, 404);
   const nothing = await fetch(`http://127.0.0.1:${port}/api/nope`);
   assert.equal(nothing.status, 404);
+});
+
+test("configured dashboard tokens protect asynchronous report reads", async (t) => {
+  const fixture = await startFixture();
+  const dashboardPort = 4700 + (process.pid % 200);
+  const dashboard = spawn(process.execPath, [new URL("../src/server.mjs", import.meta.url).pathname], {
+    env: { ...process.env, PORT: String(dashboardPort), SENTINEL_API_TOKEN: "test-token" },
+    stdio: "ignore",
+  });
+  t.after(() => {
+    dashboard.kill("SIGTERM");
+    fixture.close();
+  });
+
+  await waitForHealth(dashboardPort);
+  const { port } = fixture.address();
+  const target = `http://127.0.0.1:${port}/`;
+  const started = await fetch(`http://127.0.0.1:${dashboardPort}/api/scans`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-sentinelscan-token": "test-token" },
+    body: JSON.stringify({ target, confirmAuthorized: true, allowPrivateNetwork: true, maxPages: 1, maxResources: 1, maxRequests: 10, delayMs: 0, scope: { allowedOrigins: [`http://127.0.0.1:${port}`] } }),
+  });
+  assert.equal(started.status, 202);
+  const { id } = await started.json();
+  const withoutToken = await fetch(`http://127.0.0.1:${dashboardPort}/api/scans/${id}`);
+  assert.equal(withoutToken.status, 401);
+
+  let final;
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const response = await fetch(`http://127.0.0.1:${dashboardPort}/api/scans/${id}`, { headers: { "x-sentinelscan-token": "test-token" } });
+    final = await response.json();
+    if (["complete", "error", "canceled"].includes(final.status)) break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.equal(final.status, "complete");
+});
+
+test("dashboard persists completed jobs and rate-limits polling", async (t) => {
+  const fixture = await startFixture();
+  const dataDir = await mkdtemp(join(tmpdir(), "sentinelscan-dashboard-"));
+  const dashboardPort = 4900 + (process.pid % 100);
+  const start = () => spawn(process.execPath, [new URL("../src/server.mjs", import.meta.url).pathname], {
+    env: { ...process.env, PORT: String(dashboardPort), SENTINEL_DASHBOARD_DATA_DIR: dataDir },
+    stdio: "ignore",
+  });
+  let dashboard = start();
+  t.after(() => {
+    dashboard.kill("SIGTERM");
+    fixture.close();
+    rm(dataDir, { recursive: true, force: true });
+  });
+  await waitForHealth(dashboardPort);
+  const { port } = fixture.address();
+  const target = `http://127.0.0.1:${port}/`;
+  const started = await fetch(`http://127.0.0.1:${dashboardPort}/api/scans`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ target, confirmAuthorized: true, allowPrivateNetwork: true, maxPages: 1, maxResources: 1, maxRequests: 10, delayMs: 0, scope: { allowedOrigins: [`http://127.0.0.1:${port}`] } }),
+  });
+  const { id } = await started.json();
+  let final;
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    final = await (await fetch(`http://127.0.0.1:${dashboardPort}/api/scans/${id}`)).json();
+    if (["complete", "error", "canceled"].includes(final.status)) break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.equal(final.status, "complete");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  dashboard.kill("SIGTERM");
+  await new Promise((resolve) => dashboard.once("exit", resolve));
+  dashboard = start();
+  await waitForHealth(dashboardPort);
+  const restored = await fetch(`http://127.0.0.1:${dashboardPort}/api/scans/${id}`);
+  assert.equal(restored.status, 200);
+  assert.equal((await restored.json()).status, "complete");
+
+  let rateLimited = false;
+  for (let attempt = 0; attempt < 125; attempt += 1) {
+    const response = await fetch(`http://127.0.0.1:${dashboardPort}/api/scans/${id}`);
+    if (response.status === 429) {
+      rateLimited = true;
+      assert.ok(Number(response.headers.get("retry-after")) >= 1);
+      break;
+    }
+  }
+  assert.equal(rateLimited, true);
 });

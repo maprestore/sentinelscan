@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelscan.example/schemas/finding.schema.json",
+  "title": "SentinelScan finding",
+  "type": "object",
+  "required": ["id", "severity", "title", "evidence", "location", "remediation", "fingerprint", "category", "confidence", "confidenceScore", "status", "observedAt"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "severity": { "enum": ["info", "low", "medium", "high"] },
+    "title": { "type": "string" },
+    "evidence": { "type": "string" },
+    "location": { "type": "string", "format": "uri" },
+    "remediation": { "type": "string" },
+    "fingerprint": { "type": "string" },
+    "category": { "type": "string" },
+    "confidence": { "type": "string" },
+    "confidenceScore": { "type": "number", "minimum": 0, "maximum": 1 },
+    "status": { "enum": ["observed", "candidate"] },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "triage": {
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["open", "suppressed"] },
+        "owner": { "type": "string" },
+        "reason": { "type": "string" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "suppressionExpired": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

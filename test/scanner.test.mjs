@@ -54,10 +54,12 @@ test("scan finds posture issues without submitting forms or leaving the origin",
   const { port } = server.address();
   const target = `http://127.0.0.1:${port}/`;
   await assert.rejects(
-    () => scan(target, { scope: { allowedOrigins: ["https://outside.example"] } }),
+    () => scan(target, { confirmAuthorized: true, scope: { allowedOrigins: ["https://outside.example"] } }),
     /Out-of-scope navigation blocked/,
   );
   const report = await scan(target, {
+    confirmAuthorized: true,
+    allowPrivateNetwork: true,
     maxPages: 3,
     delayMs: 0,
     scope: { name: "local-fixture", allowedOrigins: [`http://127.0.0.1:${port}`] },

@@ -12,6 +12,7 @@ Run `node src/cli.mjs --help` for the built-in summary.
 - [Authenticated observation](#authenticated-observation)
 - [Infrastructure checks](#infrastructure-checks)
 - [Checkpoints and baselines](#checkpoints-and-baselines)
+- [Rendered mode and triage](#rendered-mode-and-triage)
 - [Config file](#config-file)
 - [Scope file](#scope-file)
 - [Exit codes](#exit-codes)
@@ -30,7 +31,8 @@ Run `node src/cli.mjs --help` for the built-in summary.
 | Flag | Description |
 | --- | --- |
 | `--format <text\|json\|sarif\|html>` | Report format. Default `text`. |
-| `--out <path>` | **Also** write the report to a file. The report is still printed to stdout, so redirect (`> /dev/null`, or `> NUL` on Windows) if you only want the file. |
+| `--out <path>` | **Also** write the report to a private file (mode `0600`). The report is still printed to stdout, so redirect (`> /dev/null`, or `> NUL` on Windows) if you only want the file. |
+| `--sarif-out <path>` | Write SARIF alongside another primary format, so one scan can produce JSON and SARIF without repeating target traffic. |
 
 | Format | Use it for |
 | --- | --- |
@@ -45,13 +47,14 @@ Every run is bounded by independent limits. Exhausting any of them stops the sca
 
 | Flag | Default | Description |
 | --- | ---: | --- |
-| `--max-pages <n>` | 20 | HTML pages to visit |
-| `--max-resources <n>` | 40 | JS/JSON resources to inspect |
-| `--max-requests <n>` | 80 | Hard cap across pages, resources, redirects, and metadata requests |
+| `--max-pages <n>` | 20 | HTML pages to visit. The resource queue continues independently when this limit is reached. |
+| `--max-resources <n>` | 40 | JS/JSON/source-map resources to inspect. |
+| `--max-requests <n>` | 80 | Hard cap across pages, resources, redirects, well-known paths, and opt-in infrastructure operations |
 | `--max-elapsed-ms <n>` | 120000 | Wall-clock cap for one scan |
 | `--max-response-bytes <n>` | 1000000 | Maximum bytes read from a single response |
 | `--timeout-ms <n>` | 8000 | Per-request timeout |
-| `--delay-ms <n>` | 250 | Minimum pause between **any** two requests: crawl, redirect hops, and the well-known path checks (`0` disables it) |
+| `--delay-ms <n>` | 250 | Minimum pause between **any** two requests: crawl, redirect hops, well-known paths, and infrastructure operations (`0` disables it) |
+| `--allow-private-network` | off | Explicit opt-in for loopback/private fixtures. Public scans remain fail-closed when DNS resolves to a non-public address. |
 
 All values must be integers: positive for limits, non-negative for the delay. The redirect limit (5 hops) can be changed only through `maxRedirects` in a [config file](#config-file).
 
@@ -85,9 +88,13 @@ Opt-in passive DNS, TLS, and email-policy metadata.
 
 | Flag | Description |
 | --- | --- |
-| `--checkpoint <path>` | Write progress atomically so an interrupted scan can resume |
-| `--resume <path>` | Resume from a checkpoint. Refuses a different target or scope |
-| `--baseline <path>` | Compare this run with a previous **JSON** report |
+| `--checkpoint <path>` | Write progress atomically so an interrupted or budget-stopped scan can resume |
+| `--resume <path>` | Resume from a checkpoint. Refuses a different target or scope; increase the relevant budget before resuming a budget-stopped run |
+| `--baseline <path>` | Compare this run with a previous **JSON** report for the same canonical target and scope |
+| `--suppressions <path>` | Apply exact-fingerprint suppressions. Every entry requires a reason and expiration; expired entries are shown as open. |
+| `--fail-on-severity <level>` | Exit with code `2` when an actionable finding meets the selected severity threshold. |
+| `--fail-on-baseline <never\|new\|changed\|regressed>` | Exit with code `2` when the baseline policy matches. Suppressed findings are not actionable. |
+| `--require-baseline` | Exit with code `2` if no baseline was supplied. |
 
 A baseline comparison adds a `comparison` object to the report:
 
@@ -99,7 +106,17 @@ A baseline comparison adds a `comparison` object to the report:
 | `newFindings`, `resolvedFindings`, `unchangedFindings`, `changedFindings` | The findings themselves |
 
 > [!NOTE]
-> A fingerprint identifies an issue on a URL path, so several instances can share one (for example two cookies that both lack `HttpOnly` on the same page). Those instances are compared **individually**: matched first by identical evidence, then by count. A third such cookie is reported as **new**, and fixing one of two is reported as **resolved**.
+> A fingerprint identifies an issue on a URL path, so several instances can share one (for example two cookies that both lack `HttpOnly` on the same page). Those instances are compared **individually**: matched first by identical evidence, then by count. A third such cookie is reported as **new**, and fixing one of two is reported as **resolved**. Comparing reports from different targets or scopes is rejected.
+
+## Rendered mode and triage
+
+The default scanner is dependency-free and observes raw HTTP responses. `--rendered --confirm-rendered` enables an optional Playwright Chromium context for JavaScript-rendered pages. The context is ephemeral, service workers and downloads are blocked, only in-scope GET/HEAD requests are allowed, and a separate acknowledgement is required because target JavaScript executes. Install the optional `playwright` package before using it.
+
+```bash
+node src/cli.mjs ... --rendered --confirm-rendered
+```
+
+Suppressions are exact fingerprint matches and remain visible in `findings`. `summary.findings` is the total; `summary.actionableFindings` excludes active suppressions; risk and attack paths use actionable findings only. Detector confidence remains in `status` and `confidence`; triage state is separate.
 
 ## Config file
 
@@ -154,8 +171,9 @@ Ports and schemes must match exactly: `https://example.com` does not allow `http
 | ---: | --- |
 | `0` | The scan (or `--help`) completed. **This includes runs that found problems** |
 | `1` | SentinelScan itself failed: bad arguments, a missing `--scope` or `--confirm-authorized`, an out-of-scope target, an unreadable file |
+| `2` | The scan completed, but the configured severity, baseline, or required-baseline policy failed |
 
-Findings do not change the exit code because they are review leads, not test failures. To gate a pipeline, use `--baseline` and inspect `comparison.summary.status`, or upload SARIF and use code-scanning rules.
+Without an explicit failure policy, findings do not change the exit code because they are review leads, not test failures.
 
 ## Recipes
 
@@ -171,11 +189,11 @@ node src/cli.mjs --target https://your-authorized-site.example --scope scope.loc
   --confirm-authorized --format html --out reports/scan.html > /dev/null
 ```
 
-**Fail a CI job on regressions**
+**Fail a CI job on high findings and regressions**
 ```bash
 node src/cli.mjs --target https://your-authorized-site.example --scope scope.local.json \
-  --confirm-authorized --format json --baseline reports/main.json --out reports/pr.json > /dev/null
-node -e 'const r=require("./reports/pr.json"); process.exit(r.comparison.summary.status==="regressed"?1:0)'
+  --confirm-authorized --format json --baseline reports/main.json --out reports/pr.json \
+  --sarif-out reports/pr.sarif --fail-on-severity high --fail-on-baseline regressed > /dev/null
 ```
 
 **A long scan you can interrupt**

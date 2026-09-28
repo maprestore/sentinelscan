@@ -18,13 +18,17 @@ export function normalizeScope(value) {
 
 export function assertInScope(value, scope) {
   const url = new URL(value);
+  if (!/^https?:$/.test(url.protocol) || url.username || url.password) {
+    throw new Error("Only clean http(s) URLs without embedded credentials may be scanned.");
+  }
   if (!scope.allowedOrigins.some((pattern) => originMatches(url, pattern))) {
     throw new Error(`Out-of-scope navigation blocked: ${url.origin}. Allowed origins: ${scope.allowedOrigins.join(", ")}`);
   }
-  if (scope.includePaths?.length && !scope.includePaths.some((path) => pathMatches(url.pathname, path))) {
+  const pathnames = decodedPathnames(url);
+  if (scope.includePaths?.length && !pathnames.some((pathname) => scope.includePaths.some((path) => pathMatches(pathname, path)))) {
     throw new Error(`Out-of-scope path blocked: ${url.pathname}. Allowed paths: ${scope.includePaths.join(", ")}`);
   }
-  if (scope.excludePaths?.some((path) => pathMatches(url.pathname, path))) {
+  if (scope.excludePaths?.some((path) => pathnames.some((pathname) => pathMatches(pathname, path)))) {
     throw new Error(`Excluded path blocked: ${url.pathname}.`);
   }
 }
@@ -42,7 +46,11 @@ function normalizeOriginPattern(origin) {
   if (host.includes("*") && !host.startsWith("*.")) {
     throw new Error(`Scope wildcard must be a leading subdomain wildcard: ${origin}`);
   }
-  return `${match[1].toLowerCase()}://${host}`;
+  const parsed = new URL(`${match[1].toLowerCase()}://${host.replace(/^\*\./, "placeholder.")}`);
+  if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) {
+    throw new Error(`Scope origin must be a clean http(s) origin or wildcard subdomain: ${origin}`);
+  }
+  return `${parsed.protocol}//${host}`;
 }
 
 function normalizePaths(paths, field) {
@@ -56,18 +64,42 @@ function normalizePaths(paths, field) {
 }
 
 function originMatches(url, pattern) {
-  const expected = new URL(pattern.replace("*.", "placeholder."));
+  const wildcard = /^https?:\/\/\*\./i.test(pattern);
+  const expected = new URL(wildcard ? pattern.replace(/^((?:https?):\/\/)\*\./i, "$1placeholder.") : pattern);
   if (url.protocol !== expected.protocol || url.port !== expected.port) return false;
   const host = url.hostname.toLowerCase();
   const patternHost = expected.hostname.toLowerCase();
-  if (patternHost.startsWith("placeholder.")) {
+  if (wildcard) {
     const suffix = patternHost.slice("placeholder.".length);
     return host.endsWith(`.${suffix}`) && host !== suffix;
   }
   return host === patternHost;
 }
 
+function decodedPathnames(url) {
+  const pathnames = [url.pathname];
+  let current = url.pathname;
+  let stable = false;
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    try {
+      const decoded = decodeURIComponent(current);
+      if (decoded === current) {
+        stable = true;
+        break;
+      }
+      pathnames.push(decoded);
+      current = decoded;
+    } catch {
+      stable = true;
+      break;
+    }
+  }
+  if (!stable) throw new Error("Encoded path exceeds the scope decoder safety limit.");
+  return [...new Set(pathnames)];
+}
+
 function pathMatches(pathname, pattern) {
+  if (pattern === "/") return true;
   if (pattern.endsWith("/*")) return pathname.startsWith(pattern.slice(0, -1));
   return pathname === pattern || pathname.startsWith(`${pattern}/`);
 }

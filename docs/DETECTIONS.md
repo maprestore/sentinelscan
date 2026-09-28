@@ -2,7 +2,7 @@
 
 Every finding SentinelScan can emit, generated from the source of `src/scanner.mjs` and `src/infrastructure.mjs`.
 
-**48 finding types**: 9 high, 7 medium, 23 low, 9 informational.
+**49 finding types**: 10 high, 7 medium, 23 low, 9 informational.
 Findings are review leads, not proof of exploitability.
 
 > [!NOTE]
@@ -20,6 +20,7 @@ How traffic reaches the browser.
 | --- | --- | --- | --- | --- |
 | `site-served-over-http` | 🔴 high | Site is served over HTTP | Deploy HTTPS and redirect every HTTP request to the HTTPS origin. | `observed` · high (0.90) |
 | `http-redirects-to-https` | 🔵 info | HTTP redirects to HTTPS | Keep the redirect and consider HSTS after confirming all subdomains are HTTPS-ready. | `observed` · high (0.90) |
+| `https-redirects-to-http` | 🔴 high | HTTPS navigation downgraded to HTTP | Reject HTTPS-to-HTTP redirects and keep the complete navigation path encrypted. | `observed` · high (0.90) |
 | `missing-hsts` | 🟡 low | Strict transport security is missing | After confirming all relevant subdomains support HTTPS, add a carefully staged HSTS policy. | `observed` · high (0.90) |
 | `weak-hsts-duration` | 🟡 low | Strict transport security duration is short | Use a staged rollout, then target at least six months of HSTS coverage once every required hostname supports HTTPS. | `observed` · high (0.90) |
 | `hsts-missing-subdomains` | 🔵 info | Strict transport security does not cover subdomains | Add includeSubDomains only after confirming every relevant subdomain is HTTPS-ready. | `observed` · high (0.90) |

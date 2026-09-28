@@ -31,7 +31,7 @@ test("the request delay applies to every request: crawl, redirect hops, and well
   t.after(() => server.close());
 
   const delayMs = 80;
-  const report = await scan(`${origin}/`, { delayMs, scope: { name: "pacing", allowedOrigins: [origin] } });
+  const report = await scan(`${origin}/`, { confirmAuthorized: true, allowPrivateNetwork: true, delayMs, scope: { name: "pacing", allowedOrigins: [origin] } });
 
   const paths = arrivals.map((entry) => entry.path);
   assert.ok(paths.includes("/moved") && paths.includes("/final"), "the redirect hop should have been followed");
@@ -49,7 +49,7 @@ test("delayMs 0 sends requests back to back", async (t) => {
   const { server, arrivals, origin } = await startSite((request, response) => (request.url === "/" ? html(response, "<p>hi</p>") : (response.writeHead(404), response.end())));
   t.after(() => server.close());
   const started = performance.now();
-  await scan(`${origin}/`, { delayMs: 0, scope: { name: "no-delay", allowedOrigins: [origin] } });
+  await scan(`${origin}/`, { confirmAuthorized: true, allowPrivateNetwork: true, delayMs: 0, scope: { name: "no-delay", allowedOrigins: [origin] } });
   assert.ok(arrivals.length >= 10);
   assert.ok(performance.now() - started < 1500, "ten local requests without a delay should be fast");
 });
@@ -68,7 +68,7 @@ test("a request that times out becomes a finding; it does not abort the scan", a
     server.close();
   });
 
-  const report = await scan(`${origin}/`, { delayMs: 0, timeoutMs: 150, scope: { name: "timeout", allowedOrigins: [origin] } });
+  const report = await scan(`${origin}/`, { confirmAuthorized: true, allowPrivateNetwork: true, delayMs: 0, timeoutMs: 150, scope: { name: "timeout", allowedOrigins: [origin] } });
   const failed = report.findings.filter((item) => item.id === "request-failed");
   assert.equal(failed.length, 1);
   assert.match(failed[0].evidence, /timed out after 150 ms/);
@@ -84,7 +84,7 @@ test("an operator cancellation still stops the scan, even while waiting between 
   const started = performance.now();
   setTimeout(() => controller.abort(new DOMException("Canceled by operator.", "AbortError")), 150);
   await assert.rejects(
-    scan(`${origin}/`, { delayMs: 5_000, signal: controller.signal, scope: { name: "cancel", allowedOrigins: [origin] } }),
+    scan(`${origin}/`, { confirmAuthorized: true, allowPrivateNetwork: true, delayMs: 5_000, signal: controller.signal, scope: { name: "cancel", allowedOrigins: [origin] } }),
     { name: "AbortError" },
   );
   assert.ok(performance.now() - started < 2_000, "cancellation must interrupt the delay instead of waiting it out");
@@ -94,7 +94,7 @@ test("the wall-clock budget is honored while pacing the well-known path checks",
   const { server, origin } = await startSite((request, response) => (request.url === "/" ? html(response, "<p>hi</p>") : (response.writeHead(404), response.end())));
   t.after(() => server.close());
   const started = performance.now();
-  const report = await scan(`${origin}/`, { delayMs: 400, maxElapsedMs: 1_000, scope: { name: "budget", allowedOrigins: [origin] } });
+  const report = await scan(`${origin}/`, { confirmAuthorized: true, allowPrivateNetwork: true, delayMs: 400, maxElapsedMs: 1_000, scope: { name: "budget", allowedOrigins: [origin] } });
   assert.match(report.summary.termination, /Maximum scan duration reached/);
   assert.ok(performance.now() - started < 2_500, "the scan must stop shortly after the time budget, not after all nine paths");
 });

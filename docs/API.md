@@ -3,7 +3,7 @@
 The local dashboard (`npm run dashboard`) exposes a small JSON API for driving scans from your own tooling. It uses the same scanner, the same scope gate, and the same guardrails as the CLI.
 
 > [!WARNING]
-> The server binds to `127.0.0.1` by default (override with `HOST` and `PORT`). It has **no authentication**. Do not expose it to a network you do not fully trust.
+> The server binds to `127.0.0.1` by default. Mutation requests require JSON and same-origin browser metadata. If `HOST` is changed to a non-loopback address, set `SENTINEL_API_TOKEN` and send it as `X-SentinelScan-Token` on scan creation, cancellation, and job-report reads; otherwise API access is refused. Set `SENTINEL_ALLOWED_ORIGINS` to a comma-separated explicit browser-origin allow-list for deployments behind a fixed URL. Do not expose the dashboard to a network you do not fully trust.
 
 - [Endpoints](#endpoints)
 - [Start a scan](#start-a-scan)
@@ -31,7 +31,7 @@ Prefer the asynchronous `/api/scans` flow for anything that can take more than a
 ```bash
 curl -s -X POST http://127.0.0.1:4173/api/scans \
   -H 'content-type: application/json' \
-  -d '{"target":"http://127.0.0.1:4599/","confirmAuthorized":true,"delayMs":0}'
+  -d '{"target":"http://127.0.0.1:4599/","confirmAuthorized":true,"allowPrivateNetwork":true,"delayMs":0}'
 ```
 
 ```json
@@ -43,6 +43,8 @@ curl -s -X POST http://127.0.0.1:4173/api/scans \
 ```
 
 `confirmAuthorized` **must** be `true`. If you omit `scope`, it defaults to the exact target origin.
+
+All mutation requests must send `Content-Type: application/json`. Browser requests must use the dashboard's own origin. The authorization field is an explicit operator acknowledgement, not a replacement for network authentication.
 
 ## Poll for progress
 
@@ -77,10 +79,13 @@ curl -s http://127.0.0.1:4173/api/scans/c4ce2337-f83b-48f0-8889-fa17316462ca
 | `complete` | Finished. `report` holds the full [report](ARCHITECTURE.md#the-report) |
 | `canceled` | Stopped by `DELETE` |
 | `error` | Failed. `error` holds the reason |
+| `interrupted` | A persisted queued/running job was found after a dashboard restart; it is never resumed automatically |
 
 `progress.phase` is one of `queued`, `started`, `request-started`, `request-completed`, `request-failed`, or `metadata-completed`.
 
-Jobs are kept in memory for **15 minutes** after they finish, then discarded.
+Jobs are kept in memory for **15 minutes** after they finish, then discarded. With `SENTINEL_DASHBOARD_DATA_DIR`, the bounded redacted job snapshot is also restored after restart; queued/running entries become `interrupted`.
+
+When `SENTINEL_API_TOKEN` is configured, add `-H 'X-SentinelScan-Token: ...'` to this polling request and to cancellation requests. `/api/health` remains available for the dashboard's connectivity check.
 
 ## Cancel a scan
 
@@ -97,34 +102,44 @@ Cancellation is cooperative: the running request is aborted and no further reque
 | `target` | string | required | `http(s)` URL |
 | `confirmAuthorized` | boolean | required | Must be exactly `true` |
 | `scope` | object | target origin | Same shape as a [scope file](CLI.md#scope-file). The target must be inside it |
-| `maxPages` | number | 20 | Clamped to 1 to 50 |
-| `maxResources` | number | 40 | Clamped to 1 to 100 |
-| `maxRequests` | number | 80 | Clamped to 1 to 200 |
-| `maxElapsedMs` | number | 120000 | Clamped to 1,000 to 600,000 |
-| `delayMs` | number | 250 | Clamped to 0 to 2,000 |
-| `timeoutMs` | number | 8000 | Clamped to 1,000 to 8,000 |
+| `maxPages` | integer | 20 | Clamped to 1 to 50 |
+| `maxResources` | integer | 40 | Clamped to 1 to 100 |
+| `maxRequests` | integer | 80 | Clamped to 1 to 200 |
+| `maxElapsedMs` | integer | 120000 | Clamped to 1,000 to 600,000 |
+| `delayMs` | integer | 250 | Clamped to 0 to 2,000 |
+| `timeoutMs` | integer | 8000 | Clamped to 1,000 to 8,000 |
 | `checkInfrastructure` | boolean | `false` | Opt-in DNS/TLS/email checks |
 | `certificateTransparency` | boolean | `false` | Opt-in. Queries crt.sh |
 | `emailDomain` | string | target hostname | For email-policy lookups |
 | `authHeaders` | object | none | Operator-supplied test-session headers |
 | `authHeaderOrigins` | string[] | `[target origin]` | Exact origins that may receive `authHeaders` |
+| `allowPrivateNetwork` | boolean | `false` | Must be explicitly true for loopback, private, reserved, or non-public DNS targets |
+| `rendered` | boolean | `false` | Optional Playwright-rendered mode; requires `confirmRendered: true` |
+| `confirmRendered` | boolean | `false` | Separate acknowledgement that target JavaScript will execute |
+| `suppressions` | array | `[]` | Exact fingerprint suppressions with a reason and expiration |
 
 Out-of-range numbers are clamped, not rejected. The request body itself is limited to 16 KB.
 
 ## Limits and errors
 
 - **One scan at a time.** Starting a second while one is queued or running returns `409`.
+- **Rate limits.** Scan creation, synchronous scans, polling, and cancellation have separate per-client in-memory limits. A rejected request returns `429` with `Retry-After`.
+- **Persistence is opt-in.** Set `SENTINEL_DASHBOARD_DATA_DIR` to atomically persist redacted job state and an append-only operational audit log. Queued/running jobs become `interrupted` after restart and are never resumed automatically.
 - Errors are JSON: `{ "error": "..." }`.
 
 | Status | When | Example `error` |
 | ---: | --- | --- |
 | `400` | The request is invalid. Missing `confirmAuthorized`, an out-of-scope target, a bad scheme, forbidden auth headers, or a body that is not a JSON object | `Refusing to scan without explicit authorization confirmation.` |
+| `401` | A configured dashboard API token is missing or invalid | `A valid dashboard API token is required.` |
+| `403` | A browser request is cross-origin, or a non-loopback dashboard has no configured token | `Cross-origin dashboard requests are not allowed.` |
+| `415` | A mutation request is not JSON | `Content-Type must be application/json.` |
 | `404` | Unknown or expired job, or unknown route | `Scan job not found or expired.` |
 | `409` | A scan is already queued or running | `A scan is already running in this local dashboard.` |
 | `413` | The request body is over 16 KB | `Request body is too large.` |
+| `429` | A per-client dashboard rate limit was exceeded | `Rate limit exceeded.` |
 | `500` | An unexpected server fault | |
 
-`POST /api/scans` validates the request **before** queueing a job, so an invalid request fails immediately with a `4xx` instead of producing a failed job. The synchronous `POST /api/scan` uses the same validation and the same status codes.
+`POST /api/scans` validates the request **before** queueing a job, so an invalid request fails immediately with a `4xx` instead of producing a failed job. The synchronous `POST /api/scan` uses the same validation and the same status codes. Only one synchronous or asynchronous scan can reserve the dashboard at a time.
 
 ## Example client
 
@@ -160,15 +175,19 @@ curl -s http://127.0.0.1:4173/api/health
 {
   "realScan": true,
   "mode": "bounded-passive",
-  "targetRequests": "GET only",
+  "targetRequests": "GET/HEAD only",
   "version": "0.5.0",
   "activeJobs": 0,
+  "persistence": false,
   "capabilities": [
     "multi-origin scopes",
     "client API inventory",
     "resumable CLI scans",
     "progress and cancellation",
-    "optional DNS/TLS/email/CT metadata"
+    "private-network policy",
+    "finding triage",
+    "optional DNS/TLS/email/CT metadata",
+    "optional rendered mode"
   ]
 }
 ```

@@ -5,7 +5,7 @@
 <br>
 
 ### A web security posture scanner with a conscience.
-**Scope-locked. GET-only. Budgeted. It explains every score it gives you.**
+**Scope-locked. GET/HEAD-only. Budgeted. It explains every score it gives you.**
 
 <br>
 
@@ -21,7 +21,7 @@
 
 <br>
 
-| **48** | **5** | **4** | **0** | **22** |
+ | **49** | **5** | **4** | **0** | **61** |
 | :---: | :---: | :---: | :---: | :---: |
 | finding types | attack-path rules | report formats | runtime dependencies | offline tests |
 
@@ -32,7 +32,7 @@
 ## 🎬 See it work
 
 <div align="center">
-<img src="docs/assets/terminal.svg" alt="Animated terminal showing a SentinelScan run: 19 findings, risk 100 out of 100, four correlated attack paths" width="900">
+<img src="docs/assets/terminal.svg" alt="Animated terminal showing a SentinelScan run: a local fixture scan with risk scoring and correlated attack paths" width="900">
 <br>
 <sub>Real output from a scan of the bundled, local-only demo site. Try it yourself in under a minute, no target required.</sub>
 </div>
@@ -52,7 +52,7 @@ It is deliberately **not** an exploit framework. It never submits a form, guesse
 | **Blast radius** | Crawl until done | **Hard budgets:** 80 requests, 120 s, 1 MB per response, 5 redirects (all adjustable) |
 | **Results** | Hundreds of unranked alerts | **Confidence-aware findings**, diminishing returns on repeats, and correlated attack paths |
 | **Explainability** | "Risk: High" | **A score you can audit,** down to the points each finding contributed |
-| **Footprint** | A heavyweight stack | **`node src/cli.mjs`.** Zero runtime dependencies, about 1,900 lines of readable source |
+| **Footprint** | A heavyweight stack | **`node src/cli.mjs`.** Zero runtime dependencies, about 2,600 lines of readable source |
 
 ## ⚡ Quick start in 60 seconds
 
@@ -74,14 +74,15 @@ node src/cli.mjs \
   --target http://127.0.0.1:4599/ \
   --scope examples/weak-site.scope.json \
   --confirm-authorized \
+  --allow-private-network \
   --delay-ms 0
 ```
 
-You should see **19 findings, a risk of 100/100 (F), and 4 correlated attack paths**. Want the shareable version?
+You should see a bounded local report with a risk grade and correlated attack paths. The exact count can change as detector coverage evolves.
 
 ```bash
 node src/cli.mjs --target http://127.0.0.1:4599/ --scope examples/weak-site.scope.json \
-  --confirm-authorized --delay-ms 0 --format html --out demo-report.html > /dev/null
+  --confirm-authorized --allow-private-network --delay-ms 0 --format html --out demo-report.html > /dev/null
 ```
 
 Open `demo-report.html` in a browser. (`--out` also prints to the terminal, so the redirect keeps it quiet; use `> NUL` on Windows.)
@@ -103,7 +104,7 @@ The CLI refuses to send a single request without **both** `--scope` and `--confi
 
 | | | |
 | --- | --- | --- |
-| **🧭 Scope gate**<br>Exact origins, multiple origins, and leading-subdomain wildcards, plus include/exclude paths. | **🛰️ Bounded GET engine**<br>Crawls HTML, JS, and JSON inside independent page, resource, request, and time budgets. | **🔎 48 finding types**<br>Transport, browser policy, cookies, auth forms, client exposure, disclosure, and infrastructure. |
+| **🧭 Scope gate**<br>Exact origins, multiple origins, and leading-subdomain wildcards, plus include/exclude paths. | **🛰️ Bounded GET engine**<br>Crawls HTML, JS, JSON, and source maps inside independent page, resource, request, and time budgets. | **🔎 49 finding types**<br>Transport, browser policy, cookies, auth forms, client exposure, disclosure, and infrastructure. |
 | **🧠 Confidence-aware risk**<br>Candidates are discounted; repeats have diminishing returns; nothing is a black box. | **🔗 Attack paths**<br>Declarative rules turn separate findings into a story a reviewer can act on. | **📦 Four formats**<br>Text, JSON, standalone HTML, and SARIF 2.1.0 for GitHub Code Scanning. |
 | **♻️ Baselines**<br>Compare runs: new, resolved, unchanged, severity-changed, and risk delta. | **⏸️ Resumable**<br>Atomic checkpoints let an interrupted scan pick up where it stopped. | **🖥️ Local dashboard**<br>Async jobs with live progress and cancel, bound to localhost. |
 
@@ -197,7 +198,7 @@ Safety is not a setting. It is the shape of the program.
 ```mermaid
 flowchart TB
     subgraph Allowed[Allowed behavior]
-        A[GET requests]
+        A[GET / HEAD requests]
         B[Explicit origins and paths]
         C[Bounded pages resources requests time]
         D[Passive headers body and DNS observations]
@@ -216,8 +217,9 @@ flowchart TB
 | Lock | What it does |
 | --- | --- |
 | 🔐 **Authorization gate** | No request is sent without `--scope` **and** `--confirm-authorized` (`confirmAuthorized: true` in the API). |
+| 🏠 **Private-network gate** | Loopback, private, reserved, and non-public DNS addresses are blocked unless `--allow-private-network` is explicitly supplied for a local fixture. |
 | 🧭 **Scope allow-list** | Every URL is checked *before* it is fetched, and again on **every redirect hop**. Out-of-scope links are never queued. |
-| 🪶 **GET only, redirects by hand** | Redirects are followed manually (max 5) so each hop passes the scope gate. |
+| 🪶 **GET/HEAD only, redirects by hand** | Redirects are followed manually (max 5) so each hop passes the scope gate. |
 | ⏱️ **Hard budgets** | Pages, resources, total requests, wall-clock time, response bytes, and per-request timeout are independent limits. |
 | 🕵️ **Credential hygiene** | Auth headers go only to origins you name, and never appear in reports or checkpoints. Credential-shaped query parameters are rejected or redacted. |
 | 🏠 **Localhost dashboard** | Binds to `127.0.0.1` by default, runs one job at a time, and caps request bodies at 16 KB. |
@@ -244,7 +246,7 @@ Read the full model in [docs/SAFETY.md](docs/SAFETY.md).
 | **JSON** | `--format json` | Automation, baselines, dashboards |
 | **SARIF 2.1.0** | `--format sarif` | GitHub Code Scanning |
 
-Add `--out reports/scan.json` to also write the report to disk. Keep reports private: they can contain internal URLs and response details.
+Add `--out reports/scan.json` to also write the report to disk. Add `--sarif-out reports/scan.sarif` to produce both JSON and SARIF from one scan. Keep reports private: they can contain internal URLs and response details.
 
 ## 🔁 Fits your workflow
 
@@ -262,6 +264,8 @@ node src/cli.mjs \
   --out reports/scan-next.json
 ```
 Reports **new**, **resolved**, **unchanged**, and **severity-changed** findings, plus the risk delta.
+
+Use `--fail-on-severity high` or `--fail-on-baseline regressed` to make CI return exit code `2` while still writing the report.
 
 </td>
 <td width="50%" valign="top">
@@ -362,7 +366,7 @@ Every flag is documented in [docs/CLI.md](docs/CLI.md).
 ## 🔎 Detection coverage
 
 <details>
-<summary><b>48 finding types across 8 areas</b> (expand)</summary>
+<summary><b>49 finding types across 8 areas</b> (expand)</summary>
 
 <br>
 
@@ -446,14 +450,14 @@ Yes, with a short-lived test session **you** provide as request headers. Sentine
 
 <br>
 
-A security tool should be easy to audit. The whole scanner is plain Node.js (`fetch`, `node:test`, and friends) in about 1,900 lines. There is no dependency tree to review, and nothing to install.
+A security tool should be easy to audit. The passive scanner is plain Node.js (`node:http`, `node:dns`, `node:test`, and friends) with no runtime dependency tree. Rendered mode is the only optional add-on and loads Playwright only when explicitly selected.
 
 </details>
 
 ## 🧪 Development
 
 ```bash
-npm test          # 22 fixture-based tests; no internet required
+npm test          # 61 fixture-based tests; no internet required
 ```
 
 The tests use local fixture servers and never contact the public internet. To add a detector, see [CONTRIBUTING.md](CONTRIBUTING.md).

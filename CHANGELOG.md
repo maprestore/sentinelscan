@@ -35,8 +35,8 @@ All notable changes to SentinelScan are documented here. The format is based on 
 
 ### Capabilities
 
-- **Safety:** GET-only requests, mandatory scope file and `--confirm-authorized`, scope enforced on every URL and redirect hop, hard execution budgets, credential redaction, and operator-only auth headers limited to allow-listed origins.
-- **Scanning:** bounded HTML, JavaScript, and JSON crawl; client API endpoint inventory; 48 finding types across transport, browser policy, cookies, authentication forms, client exposure, disclosure, and infrastructure.
+- **Safety:** GET/HEAD-only requests, mandatory scope file and `--confirm-authorized`, scope enforced on every URL and redirect hop, hard execution budgets, credential redaction, and operator-only auth headers limited to allow-listed origins.
+- **Scanning:** bounded HTML, JavaScript, JSON, and source-map crawl; client API endpoint inventory; 49 finding types across transport, browser policy, cookies, authentication forms, client exposure, disclosure, and infrastructure.
 - **Intelligence:** confidence-aware findings with stable fingerprints, transparent risk scoring with diminishing returns, and five declarative attack-path rules.
 - **Outputs:** text, JSON, standalone HTML, and SARIF 2.1.0.
 - **Workflow:** baseline regression comparison, atomic resumable checkpoints, a localhost dashboard with an asynchronous jobs API (progress and cancellation), and opt-in passive infrastructure checks (DNS, TLS, SPF, DMARC, DKIM, CAA, Certificate Transparency).

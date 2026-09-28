@@ -1,0 +1,8 @@
+[
+  {
+    "fingerprint": "replace-with-an-exact-report-fingerprint",
+    "reason": "Accepted risk while the replacement control is deployed.",
+    "owner": "security-team",
+    "expiresAt": "2027-01-01T00:00:00Z"
+  }
+]

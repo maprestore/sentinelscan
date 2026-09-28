@@ -1,8 +1,11 @@
+import { isSuppressed } from "./triage.mjs";
+
 const fingerprintOf = (item) => item.fingerprint || `${item.id}|${item.location}`;
 
-function groupByFingerprint(report) {
+function groupByFingerprint(report, predicate = () => true) {
   const groups = new Map();
   for (const item of report?.findings || []) {
+    if (!predicate(item)) continue;
     const key = fingerprintOf(item);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(item);
@@ -27,8 +30,16 @@ export function compareReports(current, baseline) {
   if (!current?.findings || !baseline?.findings) {
     throw new Error("Both current and baseline reports must contain findings arrays.");
   }
-  const currentGroups = groupByFingerprint(current);
-  const baselineGroups = groupByFingerprint(baseline);
+  if (!current.target || !baseline.target || current.target !== baseline.target) {
+    throw new Error("Current and baseline reports must target the same URL.");
+  }
+  if (scopeIdentity(current.scope) !== scopeIdentity(baseline.scope)) {
+    throw new Error("Current and baseline reports must use the same scope.");
+  }
+  const currentSuppressed = (current.findings || []).filter(isSuppressed);
+  const baselineSuppressed = (baseline.findings || []).filter(isSuppressed);
+  const currentGroups = groupByFingerprint(current, (item) => !isSuppressed(item));
+  const baselineGroups = groupByFingerprint(baseline, (item) => !isSuppressed(item));
 
   const previousFor = new Map(); // current finding -> the baseline finding it matches
   const matchedBaseline = new Set();
@@ -56,7 +67,9 @@ export function compareReports(current, baseline) {
 
   const newFindings = current.findings.filter((item) => !previousFor.has(item));
   const unchangedFindings = current.findings.filter((item) => previousFor.has(item));
-  const resolvedFindings = baseline.findings.filter((item) => !matchedBaseline.has(item));
+  const resolvedFindings = baseline.findings.filter((item) => !isSuppressed(item) && !matchedBaseline.has(item) && !currentSuppressed.some((suppressed) => fingerprintOf(suppressed) === fingerprintOf(item)));
+  const suppressedFindings = currentSuppressed;
+  const suppressedInsteadOfResolved = baseline.findings.filter((item) => !isSuppressed(item) && !matchedBaseline.has(item) && currentSuppressed.some((suppressed) => fingerprintOf(suppressed) === fingerprintOf(item)));
   const changedFindings = unchangedFindings
     .map((item) => ({ previous: previousFor.get(item), current: item }))
     .filter(({ previous, current: item }) => previous.severity !== item.severity);
@@ -70,17 +83,30 @@ export function compareReports(current, baseline) {
     resolvedFindings,
     unchangedFindings,
     changedFindings,
+    suppressedFindings,
+    suppressedInsteadOfResolved,
     summary: {
       new: newFindings.length,
       resolved: resolvedFindings.length,
       unchanged: unchangedFindings.length,
       changed: changedFindings.length,
       riskDelta: currentScore - baselineScore,
+      suppressed: suppressedFindings.length,
+      baselineSuppressed: baselineSuppressed.length,
       status: newFindings.length || changedFindings.some(({ current: item, previous }) => severityRank(item.severity) > severityRank(previous.severity))
         ? "regressed"
         : resolvedFindings.length || changedFindings.length ? "improved" : "unchanged",
     },
   };
+}
+
+function scopeIdentity(scope) {
+  if (scope === undefined || scope === null) return "";
+  return JSON.stringify({
+    allowedOrigins: [...(scope.allowedOrigins || [])].sort(),
+    includePaths: [...(scope.includePaths || [])].sort(),
+    excludePaths: [...(scope.excludePaths || [])].sort(),
+  });
 }
 
 function severityRank(value) {

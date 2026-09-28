@@ -73,19 +73,21 @@ if (!headerValue(headers, "cross-origin-opener-policy")) {
 }
 ```
 
-**2. Set confidence if it is a candidate.** If the detector matches a *pattern* rather than a fact, add a profile so it is discounted in the risk score:
+**2. Register the detector and set confidence.** Add its complete descriptor to `src/detector-registry.mjs`, including phase, severity, category, remediation, safety rationale, and confidence. If the detector matches a *pattern* rather than a fact, set its descriptor profile so it is discounted in the risk score:
 
 ```js
-// FINDING_PROFILES in src/scanner.mjs
+// The descriptor in src/detector-registry.mjs
 "my-candidate-finding": { category: "client-exposure", confidence: "medium", confidenceScore: 0.7, status: "candidate" },
 ```
 
 Anything without a profile defaults to `observed`, `high`, `0.9`.
 
-**3. Write a test.** Follow `test/scanner.test.mjs`: start a local `http.createServer`, scan it, and assert on the finding IDs.
+**3. Write a test.** Follow `test/scanner.test.mjs`: start a local `http.createServer`, scan it with `allowPrivateNetwork: true`, and assert on the finding IDs.
 
 ```js
 const report = await scan(`http://127.0.0.1:${port}/`, {
+  confirmAuthorized: true,
+  allowPrivateNetwork: true,
   delayMs: 0,
   scope: { name: "fixture", allowedOrigins: [`http://127.0.0.1:${port}`] },
 });

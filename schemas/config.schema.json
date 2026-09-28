@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelscan.example/schemas/config.schema.json",
+  "title": "SentinelScan configuration",
+  "type": "object",
+  "properties": {
+    "maxPages": { "type": "integer", "minimum": 1 },
+    "maxRedirects": { "type": "integer", "minimum": 0 },
+    "maxResponseBytes": { "type": "integer", "minimum": 1 },
+    "timeoutMs": { "type": "integer", "minimum": 1 },
+    "delayMs": { "type": "integer", "minimum": 0 },
+    "maxResources": { "type": "integer", "minimum": 1 },
+    "maxRequests": { "type": "integer", "minimum": 1 },
+    "maxElapsedMs": { "type": "integer", "minimum": 1 },
+    "checkInfrastructure": { "type": "boolean" },
+    "certificateTransparency": { "type": "boolean" },
+    "allowPrivateNetwork": { "type": "boolean" },
+    "rendered": { "type": "boolean" },
+    "confirmRendered": { "type": "boolean" },
+    "emailDomain": { "type": "string" },
+    "dkimSelectors": { "type": "array", "items": { "type": "string" } },
+    "authHeaders": { "type": "object", "additionalProperties": { "type": "string" } },
+    "authHeaderOrigins": { "type": "array", "items": { "type": "string" } },
+    "suppressions": { "$ref": "suppressions.schema.json" },
+    "exitPolicy": {
+      "type": "object",
+      "properties": {
+        "failOnSeverity": { "enum": ["info", "low", "medium", "high"] },
+        "failOnBaseline": { "enum": ["never", "new", "changed", "regressed"] },
+        "requireBaseline": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

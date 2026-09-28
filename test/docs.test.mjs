@@ -4,22 +4,14 @@ import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DETECTOR_CATALOG, validateDetectorCatalog } from "../src/detector-registry.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (path) => readFile(join(ROOT, path), "utf8");
 
-async function findingIdsInSource() {
-  const scanner = await read("src/scanner.mjs");
-  const infrastructure = await read("src/infrastructure.mjs");
-  const ids = new Set();
-  for (const match of scanner.matchAll(/\bfinding\(\s*["']([a-z0-9-]+)["']/g)) ids.add(match[1]);
-  for (const match of scanner.matchAll(/^\s*\["([a-z-]+)",\s*"[A-Za-z-]+",\s*"(?:info|low|medium|high)"\],?$/gm)) ids.add(`missing-${match[1]}`);
-  for (const match of infrastructure.matchAll(/\bid:\s*"([a-z0-9-]+)",\s*severity:/g)) ids.add(match[1]);
-  return ids;
-}
-
-test("every finding ID in the source is documented in docs/DETECTIONS.md", async () => {
-  const ids = await findingIdsInSource();
+test("the detector registry is valid and every ID is documented", async () => {
+  assert.equal(validateDetectorCatalog(), true);
+  const ids = new Set(DETECTOR_CATALOG.map((detector) => detector.id));
   assert.ok(ids.size > 40, `expected to discover the detector catalog, found ${ids.size}`);
   const catalog = await read("docs/DETECTIONS.md");
   const missing = [...ids].filter((id) => !catalog.includes(`\`${id}\``));

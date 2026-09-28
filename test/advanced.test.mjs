@@ -57,6 +57,8 @@ test("scan inventories client APIs and JSON, preserves auth headers, and checkpo
   const checkpointPath = join(tmpdir(), `sentinelscan-test-${process.pid}.json`);
   t.after(() => unlink(checkpointPath).catch(() => {}));
   const report = await scan(target, {
+    confirmAuthorized: true,
+    allowPrivateNetwork: true,
     maxPages: 3,
     maxResources: 5,
     delayMs: 0,
@@ -73,13 +75,15 @@ test("scan inventories client APIs and JSON, preserves auth headers, and checkpo
   assert.ok(ids.has("sensitive-data-in-json"));
   assert.ok(ids.has("public-source-map-reference"));
   assert.ok(report.inventory.totals.clientApiEndpoints.length >= 2);
-  assert.equal(report.summary.resourcesScanned, 2);
+  assert.equal(report.summary.resourcesScanned, 3);
   assert.equal(report.scanner.version, "0.5.0");
   const checkpoint = JSON.parse(await readFile(checkpointPath, "utf8"));
   assert.equal(checkpoint.status, "complete");
   assert.equal(checkpoint.report.summary.findings, report.summary.findings);
 
   const budgetReport = await scan(target, {
+    confirmAuthorized: true,
+    allowPrivateNetwork: true,
     maxPages: 3,
     maxResources: 5,
     maxRequests: 1,

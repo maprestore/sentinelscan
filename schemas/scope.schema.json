@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelscan.example/schemas/scope.schema.json",
+  "title": "SentinelScan scope",
+  "type": "object",
+  "required": ["allowedOrigins"],
+  "properties": {
+    "name": { "type": "string" },
+    "allowedOrigins": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "includePaths": { "type": "array", "items": { "type": "string", "pattern": "^/" } },
+    "excludePaths": { "type": "array", "items": { "type": "string", "pattern": "^/" } },
+    "notes": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

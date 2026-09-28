@@ -55,14 +55,19 @@ function path(id, severity, title, whyItMatters, nextAction, items) {
 }
 
 export function buildAttackPaths(findings, rules = DEFAULT_ATTACK_PATH_RULES) {
-  const ids = new Map(findings.map((item) => [item.id, item]));
+  const ids = new Map();
+  for (const item of findings) {
+    if (!ids.has(item.id)) ids.set(item.id, []);
+    ids.get(item.id).push(item);
+  }
   return rules.flatMap((rule) => {
-    const required = (rule.requiresAll || []).map((id) => ids.get(id)).filter(Boolean);
+    const requiredIds = rule.requiresAll || [];
+    const required = requiredIds.flatMap((id) => ids.get(id) || []);
     const any = rule.requiresAny?.some((id) => ids.has(id)) ?? true;
-    if (required.length !== (rule.requiresAll || []).length || !any) return [];
+    if (!requiredIds.every((id) => ids.has(id)) || !any) return [];
     const selected = [...required];
     for (const id of rule.requiresAny || []) {
-      if (ids.has(id)) selected.push(ids.get(id));
+      selected.push(...(ids.get(id) || []));
     }
     return [path(rule.id, rule.severity, rule.title, rule.whyItMatters, rule.nextAction, selected)];
   });

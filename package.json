@@ -5,6 +5,22 @@
   "description": "A bounded, non-destructive web security posture scanner for authorized targets.",
   "license": "MIT",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./src/index.mjs"
+    }
+  },
+  "types": "./index.d.ts",
+  "files": ["src", "schemas", "docs", "index.d.ts", "README.md", "LICENSE"],
+  "peerDependencies": {
+    "playwright": ">=1.45"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
+  },
   "scripts": {
     "scan": "node src/cli.mjs",
     "dashboard": "node src/server.mjs",

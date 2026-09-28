@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
-import { rename, writeFile } from "node:fs/promises";
+import { chmod, rename, writeFile } from "node:fs/promises";
 import { assertInScope, normalizeScope } from "./scope.mjs";
 import { inspectInfrastructure } from "./infrastructure.mjs";
 import { buildAttackPaths, calculateRisk, DEFAULT_ATTACK_PATH_RULES } from "./risk.mjs";
+import { fetchWithNetworkPolicy } from "./network-policy.mjs";
+import { getDetector } from "./detector-registry.mjs";
+import { actionableFindings, applyTriage, normalizeSuppressions, triageCounts } from "./triage.mjs";
+import { fetchRendered } from "./browser-renderer.mjs";
 
 const DEFAULTS = {
   maxPages: 20,
@@ -15,6 +19,10 @@ const DEFAULTS = {
   maxElapsedMs: 120_000,
   checkInfrastructure: false,
   certificateTransparency: false,
+  allowPrivateNetwork: false,
+  suppressions: [],
+  rendered: false,
+  confirmRendered: false,
 };
 
 export class ScanBudgetError extends Error {
@@ -35,20 +43,11 @@ const DANGEROUS_PATH_WORDS = /(?:admin|private|backup|staging|internal|config|se
 const SKIPPED_EXTENSIONS = /\.(?:7z|avi|bin|bmp|css|csv|docx?|gif|gz|ico|jpe?g|m4a|mp3|mp4|pdf|png|svg|tar|tiff?|txt|webm|webp|woff2?|xlsx?|zip)(?:$|\?)/i;
 const RESOURCE_EXTENSIONS = /\.(?:js|json|map)(?:$|\?)/i;
 const SENSITIVE_QUERY_KEYS = /(?:authorization|api[_-]?key|client[_-]?secret|password|passwd|secret|session|signature|sig|token|access[_-]?token|refresh[_-]?token)/i;
-const FINDING_PROFILES = {
-  "potential-open-redirect": { category: "redirect", confidence: "low", confidenceScore: 0.45, status: "candidate" },
-  "potential-client-secret": { category: "client-exposure", confidence: "medium", confidenceScore: 0.72, status: "candidate" },
-  "sensitive-data-in-json": { category: "data-exposure", confidence: "medium", confidenceScore: 0.78, status: "candidate" },
-  "client-api-endpoint": { category: "application-inventory", confidence: "high", confidenceScore: 0.98, status: "observed" },
-  "public-source-map-reference": { category: "client-exposure", confidence: "high", confidenceScore: 0.96, status: "observed" },
-  "client-dangerous-sink": { category: "client-exposure", confidence: "low", confidenceScore: 0.5, status: "candidate" },
-  "credential-form-cross-origin": { category: "authentication", confidence: "high", confidenceScore: 0.95, status: "observed" },
-  "credential-form-uses-get": { category: "authentication", confidence: "high", confidenceScore: 0.99, status: "observed" },
-  "cross-origin-iframe-without-sandbox": { category: "browser-policy", confidence: "high", confidenceScore: 0.95, status: "observed" },
-  "sensitive-page-cache-policy": { category: "transport", confidence: "medium", confidenceScore: 0.75, status: "candidate" },
-  "request-failed": { category: "availability", confidence: "high", confidenceScore: 0.98, status: "observed" },
-  "tls-certificate-invalid": { category: "transport", confidence: "high", confidenceScore: 0.98, status: "observed" },
-};
+const SENSITIVE_ASSIGNMENT = /\b(?:authorization|api[_-]?key|client[_-]?secret|password|passwd|secret|session|signature|sig|token|access[_-]?token|refresh[_-]?token)\b\s*[=:]\s*[^&\s,;]+/i;
+
+function isLikelyResourceUrl(url) {
+  return RESOURCE_EXTENSIONS.test(url.pathname + url.search) || /\/(?:api|graphql|swagger|openapi)(?:\/|$)/i.test(url.pathname);
+}
 
 export function normalizeTarget(value) {
   const url = new URL(value);
@@ -58,7 +57,7 @@ export function normalizeTarget(value) {
   if (url.username || url.password) {
     throw new Error("Targets containing embedded usernames or passwords are not accepted.");
   }
-  if ([...url.searchParams.keys()].some((key) => SENSITIVE_QUERY_KEYS.test(key))) {
+  if (containsSensitiveUrlData(url.href)) {
     throw new Error("Targets containing credential-shaped query parameters are not accepted; use authorized request headers instead.");
   }
   url.hash = "";
@@ -67,19 +66,86 @@ export function normalizeTarget(value) {
 
 export function redactUrl(value) {
   const url = new URL(value);
-  for (const key of url.searchParams.keys()) {
-    if (SENSITIVE_QUERY_KEYS.test(key)) url.searchParams.set(key, "[REDACTED]");
+  url.username = "";
+  url.password = "";
+  url.hash = "";
+  const parameters = [...url.searchParams.entries()];
+  url.search = "";
+  for (const [key, value] of parameters) {
+    url.searchParams.append(key, SENSITIVE_QUERY_KEYS.test(key) ? "[REDACTED]" : redactNestedUrl(value));
   }
   return url.href;
 }
 
+function redactNestedUrl(value) {
+  const text = String(value);
+  const decoded = decodeRepeated(text);
+  if (SENSITIVE_ASSIGNMENT.test(decoded) || (decoded !== text && /%[0-9a-f]{2}/i.test(decoded))) return "[REDACTED]";
+  try {
+    const nested = new URL(value);
+    if (/^https?:$/.test(nested.protocol)) return redactUrl(nested.href);
+  } catch {
+    // The value is not a URL; the generic secret redaction below still applies.
+  }
+  return text.replace(/(\b(?:authorization|api[_-]?key|client[_-]?secret|password|passwd|secret|session|signature|sig|token|access[_-]?token|refresh[_-]?token)\b\s*[=:]\s*)([^&\s,;]+)/gi, "$1[REDACTED]");
+}
+
+function containsSensitiveUrlData(value, depth = 0) {
+  if (depth > 3) return true;
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.username || url.password) return true;
+  let fragment = decodeRepeated(url.hash.slice(1));
+  if (/%[0-9a-f]{2}/i.test(fragment)) return true;
+  if (SENSITIVE_ASSIGNMENT.test(fragment)) return true;
+  for (const [key, child] of url.searchParams) {
+    if (SENSITIVE_QUERY_KEYS.test(key)) return true;
+    const decodedChild = decodeRepeated(child);
+    if (/%[0-9a-f]{2}/i.test(decodedChild)) return true;
+    if (SENSITIVE_ASSIGNMENT.test(decodedChild)) return true;
+    const nested = /^\/\//.test(decodedChild) ? `https:${decodedChild}` : decodedChild;
+    if (/^https?:\/\//i.test(nested) && containsSensitiveUrlData(nested, depth + 1)) return true;
+  }
+  return false;
+}
+
+function decodeRepeated(value) {
+  let current = String(value ?? "");
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    try {
+      const decoded = decodeURIComponent(current);
+      if (decoded === current) break;
+      current = decoded;
+    } catch {
+      break;
+    }
+  }
+  return current;
+}
+
+function redactText(value) {
+  let text = String(value ?? "");
+  text = text.replace(/\bhttps?:\/\/[^\s<>"']+/gi, (candidate) => {
+    const suffix = candidate.match(/[),.;!?]+$/)?.[0] || "";
+    const prefix = suffix ? candidate.slice(0, -suffix.length) : candidate;
+    try { return `${redactUrl(prefix)}${suffix}`; } catch { return candidate; }
+  });
+  return redactNestedUrl(text);
+}
+
 function finding(id, severity, title, evidence, location, remediation) {
+  const detector = getDetector(id);
+  if (!detector) throw new Error(`Unknown detector ID: ${id}`);
+  if (detector.severity !== severity) throw new Error(`Detector ${id} emitted severity ${severity}, expected ${detector.severity}.`);
   const safeLocation = redactUrl(location);
   const url = new URL(safeLocation);
   const fingerprintInput = `${id}|${url.origin}${url.pathname}`;
   const fingerprint = createHash("sha256").update(fingerprintInput).digest("hex").slice(0, 16);
-  const profile = FINDING_PROFILES[id] || { category: "security-posture", confidence: "high", confidenceScore: 0.9, status: "observed" };
-  return { id, severity, title, evidence, location: safeLocation, remediation, fingerprint, ...profile, observedAt: new Date().toISOString() };
+  return { id, severity, title, evidence: redactText(evidence), location: safeLocation, remediation, fingerprint, category: detector.category, confidence: detector.confidence, confidenceScore: detector.confidenceScore, status: detector.status, observedAt: new Date().toISOString() };
 }
 
 function headerValue(headers, name) {
@@ -102,7 +168,7 @@ export function normalizeAuthHeaders(headers) {
 }
 
 async function readBody(response, maxBytes, signal) {
-  if (!response.body) return { text: "", truncated: false };
+  if (!response.body) return { text: "", truncated: false, bytesRead: 0 };
 
   const reader = response.body.getReader();
   const chunks = [];
@@ -136,7 +202,7 @@ async function readBody(response, maxBytes, signal) {
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return { text: new TextDecoder().decode(bytes), truncated };
+  return { text: new TextDecoder().decode(bytes), truncated, bytesRead: bytes.byteLength };
 }
 
 function abortError(signal) {
@@ -158,6 +224,10 @@ function sleep(ms, signal) {
   });
 }
 
+function assertBeforeDeadline(deadlineAt) {
+  if (deadlineAt !== undefined && Date.now() >= deadlineAt) throw new ScanBudgetError("Maximum scan duration reached.");
+}
+
 /**
  * Enforces a minimum quiet gap between consecutive outbound requests.
  *
@@ -166,16 +236,20 @@ function sleep(ms, signal) {
  * wait() before and done() after. The gap is measured from the end of one request
  * to the start of the next, and waiting is cancelable through the scan signal.
  */
-function createPacer(delayMs, signal) {
+function createPacer(delayMs, signal, deadlineAt) {
   let readyAt = 0;
   return {
     async wait() {
+      assertBeforeDeadline(deadlineAt);
       if (!(delayMs > 0)) return;
       let remaining = readyAt - Date.now();
       while (remaining > 0) {
-        await sleep(remaining, signal);
+        const deadlineRemaining = deadlineAt === undefined ? remaining : deadlineAt - Date.now();
+        if (deadlineRemaining <= 0) throw new ScanBudgetError("Maximum scan duration reached.");
+        await sleep(Math.min(remaining, deadlineRemaining), signal);
         remaining = readyAt - Date.now();
       }
+      assertBeforeDeadline(deadlineAt);
     },
     done() {
       readyAt = Date.now() + delayMs;
@@ -184,6 +258,7 @@ function createPacer(delayMs, signal) {
 }
 
 async function fetchBounded(startUrl, options, controls = {}) {
+  if (options.rendered) return fetchRendered(startUrl, options, controls);
   let current = new URL(startUrl);
   const chain = [];
   const requests = [];
@@ -191,20 +266,29 @@ async function fetchBounded(startUrl, options, controls = {}) {
   for (let hop = 0; hop <= options.maxRedirects; hop += 1) {
     if (options.signal?.aborted) throw abortError(options.signal);
     await controls.pacer?.wait();
-    if (controls.consumeRequest && !controls.consumeRequest()) throw new ScanBudgetError("Maximum request budget reached.");
     assertInScope(current.href, options.scope);
-    if ([...current.searchParams.keys()].some((key) => SENSITIVE_QUERY_KEYS.test(key))) throw new Error("Credential-shaped query parameter blocked; use authorized request headers instead.");
+    if (containsSensitiveUrlData(current.href)) throw new Error("Credential-shaped query parameter blocked; use authorized request headers instead.");
+    assertBeforeDeadline(controls.deadlineAt);
+    if (controls.consumeRequest && !controls.consumeRequest()) throw new ScanBudgetError("Maximum request budget reached.");
     const controller = new AbortController();
     const requestStarted = Date.now();
-    const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
+    const remaining = controls.deadlineAt === undefined ? options.timeoutMs : controls.deadlineAt - Date.now();
+    if (remaining <= 0) throw new ScanBudgetError("Maximum scan duration reached.");
+    const requestTimeoutMs = Math.min(options.timeoutMs, remaining);
+    const timeoutReason = new DOMException(
+      requestTimeoutMs < options.timeoutMs ? "The scan duration expired." : "The request timed out.",
+      "AbortError",
+    );
+    const timeout = setTimeout(() => controller.abort(timeoutReason), Math.max(1, requestTimeoutMs));
     const abortParent = () => controller.abort(options.signal.reason);
     options.signal?.addEventListener("abort", abortParent, { once: true });
     let response;
+    let recorded = false;
     try {
-      response = await fetch(current, {
+      response = await fetchWithNetworkPolicy(current, {
         method: "GET",
-        redirect: "manual",
         signal: controller.signal,
+        allowPrivateNetwork: options.allowPrivateNetwork,
         headers: {
           accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.1",
           "user-agent": "SentinelScan/0.5 (authorized security posture audit)",
@@ -215,15 +299,18 @@ async function fetchBounded(startUrl, options, controls = {}) {
       const location = response.headers.get("location");
       if (status >= 300 && status < 400 && location) {
         const next = new URL(location, current);
-        assertInScope(next.href, options.scope);
         requests.push({ url: redactUrl(current.href), status, elapsedMs: Date.now() - requestStarted, redirectedTo: redactUrl(next.href) });
+        recorded = true;
+        assertInScope(next.href, options.scope);
+        if (containsSensitiveUrlData(next.href)) throw new Error("Credential-shaped redirect query parameter blocked; use authorized request headers instead.");
         chain.push({ from: current.href, to: next.href, status });
         current = next;
         continue;
       }
 
       const body = await readBody(response, options.maxResponseBytes, controller.signal);
-      requests.push({ url: redactUrl(current.href), status, elapsedMs: Date.now() - requestStarted, bytesRead: new TextEncoder().encode(body.text).byteLength });
+      requests.push({ url: redactUrl(current.href), status, elapsedMs: Date.now() - requestStarted, bytesRead: body.bytesRead });
+      recorded = true;
       return {
         requestedUrl: startUrl,
         finalUrl: current.href,
@@ -232,6 +319,15 @@ async function fetchBounded(startUrl, options, controls = {}) {
         chain,
         requests,
       };
+    } catch (error) {
+      if (!recorded) requests.push({ url: redactUrl(current.href), status: response?.status ?? null, elapsedMs: Date.now() - requestStarted, error: redactText(error?.message || "Request failed."), ...(error?.code ? { code: error.code } : {}) });
+      error.requestLog = requests;
+      if (controls.deadlineAt !== undefined && Date.now() >= controls.deadlineAt && !options.signal?.aborted) {
+        const budgetError = new ScanBudgetError("Maximum scan duration reached.");
+        budgetError.requestLog = requests;
+        throw budgetError;
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
       options.signal?.removeEventListener("abort", abortParent);
@@ -269,13 +365,14 @@ function addHeaderFindings(findings, headers, url) {
 
   const hsts = headerValue(headers, "strict-transport-security");
   if (hsts) {
-    const maxAge = Number(hsts.match(/max-age\s*=\s*(\d+)/i)?.[1] || 0);
-    if (maxAge > 0 && maxAge < 15_552_000) {
+    const maxAgeMatch = hsts.match(/max-age\s*=\s*(\d+)/i);
+    const maxAge = Number(maxAgeMatch?.[1] || 0);
+    if (!maxAgeMatch || maxAge < 15_552_000) {
       findings.push(finding(
         "weak-hsts-duration",
         "low",
         "Strict transport security duration is short",
-        `HSTS max-age is ${maxAge} seconds, below the six-month baseline.`,
+        maxAgeMatch ? `HSTS max-age is ${maxAge} seconds, below the six-month baseline.` : "HSTS does not contain a valid max-age directive.",
         url,
         "Use a staged rollout, then target at least six months of HSTS coverage once every required hostname supports HTTPS.",
       ));
@@ -317,7 +414,8 @@ function addHeaderFindings(findings, headers, url) {
     }
   }
 
-  const hasFrameProtection = Boolean(headerValue(headers, "x-frame-options")) ||
+  const frameOptions = headerValue(headers, "x-frame-options");
+  const hasFrameProtection = /^(?:deny|sameorigin)$/i.test(frameOptions) ||
     /frame-ancestors\s+/i.test(headerValue(headers, "content-security-policy"));
   if (!hasFrameProtection) {
     findings.push(finding(
@@ -424,8 +522,16 @@ function extractAttributeTags(html, tagName) {
 }
 
 function attribute(tag, name) {
-  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, "i"));
-  return match?.[1]?.trim() || "";
+  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'=<>\`]+))`, "i"));
+  return (match?.[1] ?? match?.[2] ?? match?.[3] ?? "").trim();
+}
+
+function extractFormBlocks(html) {
+  return [...html.matchAll(/<form\b[^>]*>[\s\S]*?(?:<\/form>|$)/gi)].map((match) => match[0]);
+}
+
+function hasPasswordInput(formHtml) {
+  return extractAttributeTags(formHtml, "input").some((tag) => attribute(tag, "type").toLowerCase() === "password");
 }
 
 function extractLinks(html, baseUrl) {
@@ -465,7 +571,8 @@ function addHtmlFindings(findings, html, pageUrl, rootOrigin) {
     ));
   }
 
-  for (const form of extractAttributeTags(html, "form")) {
+  for (const formHtml of extractFormBlocks(html)) {
+    const form = extractAttributeTags(formHtml, "form")[0] || formHtml;
     const formAction = attribute(form, "action");
     let formUrl;
     try {
@@ -473,8 +580,7 @@ function addHtmlFindings(findings, html, pageUrl, rootOrigin) {
     } catch {
       continue;
     }
-    const formHtml = html.slice(Math.max(0, html.indexOf(form)), Math.min(html.length, html.indexOf(form) + 10_000));
-    const hasPassword = /type\s*=\s*["']?password\b/i.test(formHtml);
+    const hasPassword = hasPasswordInput(formHtml);
     if (hasPassword && formUrl.protocol === "http:") {
       findings.push(finding(
         "credential-form-over-http",
@@ -495,7 +601,7 @@ function addHtmlFindings(findings, html, pageUrl, rootOrigin) {
         "Confirm the destination is an explicitly trusted authentication boundary and that its scope, transport, cookies, and CSRF protections are reviewed together.",
       ));
     }
-    if (hasPassword && /method\s*=\s*["']?get\b/i.test(formHtml)) {
+    if (hasPassword && (attribute(form, "method") || "get").toLowerCase() === "get") {
       findings.push(finding(
         "credential-form-uses-get",
         "high",
@@ -566,7 +672,7 @@ function addHtmlFindings(findings, html, pageUrl, rootOrigin) {
 function extractPageInventory(html, pageUrl, rootOrigin) {
   const links = extractLinks(html, pageUrl);
   const forms = extractAttributeTags(html, "form");
-  const formBlocks = [...html.matchAll(/<form\b[\s\S]*?<\/form>/gi)].map((match) => match[0]);
+  const formBlocks = extractFormBlocks(html);
   const scripts = extractAttributeTags(html, "script");
   const externalScripts = scripts.filter((tag) => {
     const source = attribute(tag, "src");
@@ -584,7 +690,7 @@ function extractPageInventory(html, pageUrl, rootOrigin) {
     links: links.length,
     sameOriginLinks: links.filter((link) => link.origin === rootOrigin).length,
     forms: forms.length,
-    passwordForms: formBlocks.filter((form) => /type\s*=\s*["']?password\b/i.test(form)).length,
+    passwordForms: formBlocks.filter(hasPasswordInput).length,
     scripts: scripts.length,
     inlineScripts: scripts.filter((tag) => !attribute(tag, "src")).length,
     externalScripts: externalScripts.length,
@@ -614,7 +720,9 @@ function extractClientInventory(text, pageUrl) {
     const candidate = normalizeClientEndpoint(match[1] || match[2], pageUrl);
     if (candidate && (/\/api(?:\/|[?#]|$)/i.test(candidate) || /(?:graphql|oauth|token|webhook|upload|search)/i.test(candidate))) endpoints.add(candidate);
   }
-  const sourceMaps = [...text.matchAll(/sourceMappingURL\s*=\s*([^\s*]+)/gi)].map((match) => match[1].trim());
+  const sourceMaps = [...text.matchAll(/sourceMappingURL\s*=\s*([^\s*]+)/gi)]
+    .map((match) => normalizeClientEndpoint(match[1].trim(), pageUrl))
+    .filter(Boolean);
   const secretMatches = [];
   const secretPattern = /(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}|sk_(?:live|test)_[A-Za-z0-9]{16,}|-----BEGIN (?:RSA |EC )?PRIVATE KEY-----|(?:api[_-]?key|secret|token)\s*[:=]\s*["'][A-Za-z0-9_\-.]{20,}["'])/gi;
   for (const match of text.matchAll(secretPattern)) secretMatches.push(match[0].slice(0, 120));
@@ -665,7 +773,7 @@ function addClientFindings(findings, text, pageUrl, contentType) {
       "Review data flow into the sink, prefer safe DOM APIs, and validate postMessage origins explicitly.",
     ));
   }
-  if (/^application\/json\b/i.test(contentType || "")) {
+  if (/^(?:application\/json|text\/json)\b/i.test(contentType || "")) {
     try {
       const value = JSON.parse(text);
       const sensitiveKeys = findSensitiveJsonKeys(value);
@@ -723,6 +831,26 @@ function uniqueFindings(findings) {
   });
 }
 
+function isHtmlFallback(text, contentType) {
+  return /html/i.test(contentType || "") || /^\s*(?:<!doctype\s+html|<html\b)/i.test(text);
+}
+
+function looksLikeHtmlDocument(text, contentType) {
+  if (/html/i.test(contentType || "")) return true;
+  if (contentType) return false;
+  return /^\s*(?:<!doctype\s+html|<(?:html|head|body|title|meta|link|script|style|a|form|input|button|img|iframe|div|main|section|article|p|ul|ol|table)\b)/i.test(text);
+}
+
+function parseJsonDocument(text, contentType) {
+  if (!/^(?:application\/json|text\/json)\b/i.test(contentType || "") && isHtmlFallback(text, contentType)) return null;
+  try {
+    const value = JSON.parse(text);
+    return value && typeof value === "object" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 async function checkWellKnownPaths(rootUrl, options, findings, controls = {}) {
   const paths = [
     "/robots.txt",
@@ -735,22 +863,30 @@ async function checkWellKnownPaths(rootUrl, options, findings, controls = {}) {
     "/openapi.json",
     "/actuator/env",
   ];
-  for (const path of paths) {
+  const startIndex = Number.isInteger(controls.startIndex) ? Math.max(0, Math.min(paths.length, controls.startIndex)) : 0;
+  for (let index = startIndex; index < paths.length; index += 1) {
+    const path = paths[index];
+    const advance = () => controls.onIndex?.(index + 1);
     // Pacing can make this loop slow, so the wall-clock budget is re-checked per path.
     if (controls.canContinue && !controls.canContinue()) throw new ScanBudgetError("Maximum scan duration reached.");
     const url = new URL(path, rootUrl);
     let result;
     try {
-      result = await fetchBounded(url.href, options, { consumeRequest: controls.consumeRequest, pacer: controls.pacer });
+      result = await fetchBounded(url.href, options, { consumeRequest: controls.consumeRequest, pacer: controls.pacer, deadlineAt: controls.deadlineAt });
       controls.requestLog?.push(...result.requests);
       controls.progress?.("metadata-completed", { url: url.href, status: result.response.status });
     } catch (error) {
+      if (error.requestLog?.length) controls.requestLog?.push(...error.requestLog);
       // A cancellation by the operator must stop the scan; a slow or failing
       // well-known path must not.
       if (error instanceof ScanBudgetError || options.signal?.aborted) throw error;
+      advance();
       continue;
     }
-    if (result.response.status < 200 || result.response.status >= 300) continue;
+    if (result.response.status < 200 || result.response.status >= 300) {
+      advance();
+      continue;
+    }
 
     if (path === "/.git/HEAD" && /^\s*ref:\s+/i.test(result.body.text)) {
       findings.push(finding(
@@ -775,7 +911,8 @@ async function checkWellKnownPaths(rootUrl, options, findings, controls = {}) {
         ));
       }
     }
-    if (path === "/.well-known/security.txt") {
+    const contentType = headerValue(result.response.headers, "content-type");
+    if (path === "/.well-known/security.txt" && !isHtmlFallback(result.body.text, contentType)) {
       findings.push(finding(
         "security-contact-published",
         "info",
@@ -816,7 +953,7 @@ async function checkWellKnownPaths(rootUrl, options, findings, controls = {}) {
         ));
       }
     }
-    if (path === "/.env" && result.body.text.trim()) {
+    if (path === "/.env" && /^[A-Za-z_][A-Za-z0-9_]*\s*=/m.test(result.body.text) && !isHtmlFallback(result.body.text, contentType)) {
       findings.push(finding(
         "exposed-environment-file",
         "high",
@@ -826,7 +963,11 @@ async function checkWellKnownPaths(rootUrl, options, findings, controls = {}) {
         "Remove environment files from the web root, rotate any values they contained, and block the path at the server or CDN.",
       ));
     }
-    if (["/config.json", "/swagger.json", "/openapi.json", "/actuator/env"].includes(path) && result.body.text.trim()) {
+    const jsonDocument = ["/config.json", "/swagger.json", "/openapi.json", "/actuator/env"].includes(path)
+      ? parseJsonDocument(result.body.text, contentType)
+      : null;
+    const isApiDescription = ["/swagger.json", "/openapi.json"].includes(path) && jsonDocument && (jsonDocument.openapi || jsonDocument.swagger || jsonDocument.paths);
+    if ((path === "/config.json" || path === "/actuator/env" ? jsonDocument : isApiDescription)) {
       findings.push(finding(
         "public-configuration-or-api-description",
         "medium",
@@ -836,14 +977,16 @@ async function checkWellKnownPaths(rootUrl, options, findings, controls = {}) {
         "Confirm the document is intentionally public, remove secrets and internal endpoints, and protect operational configuration.",
       ));
     }
+    advance();
   }
 }
 
 async function writeCheckpoint(path, state) {
   if (!path) return;
   const temporaryPath = `${path}.${process.pid}.tmp`;
-  await writeFile(temporaryPath, `${JSON.stringify({ schemaVersion: 2, ...state }, null, 2)}\n`, "utf8");
+  await writeFile(temporaryPath, `${JSON.stringify({ schemaVersion: 2, ...state }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   await rename(temporaryPath, path);
+  await chmod(path, 0o600);
 }
 
 function isInScope(value, scope) {
@@ -855,15 +998,56 @@ function isInScope(value, scope) {
   }
 }
 
+function normalizeCandidateUrl(value) {
+  const url = new URL(value);
+  if (!/^https?:$/.test(url.protocol) || url.username || url.password) throw new Error("Only clean http(s) URLs without embedded credentials may be scanned.");
+  if (containsSensitiveUrlData(url.href)) throw new Error("Credential-shaped query parameter blocked; use authorized request headers instead.");
+  url.hash = "";
+  return url;
+}
+
+export function normalizeEmailDomain(value) {
+  if (value === undefined || value === "") return undefined;
+  if (typeof value !== "string" || !value.trim()) throw new Error("emailDomain must be a non-empty hostname.");
+  const domain = value.trim().toLowerCase();
+  const parsed = new URL(`https://${domain}`);
+  if (parsed.username || parsed.password || parsed.port || parsed.pathname !== "/" || parsed.search || parsed.hash || parsed.hostname !== domain) {
+    throw new Error("emailDomain must be a plain hostname without a scheme, port, path, or credentials.");
+  }
+  return parsed.hostname;
+}
+
 function normalizeScanOptions(overrides, scope) {
-  const options = { ...DEFAULTS, ...overrides, scope, authHeaders: normalizeAuthHeaders(overrides.authHeaders) };
+  const options = { ...DEFAULTS, scope, authHeaders: normalizeAuthHeaders(overrides.authHeaders) };
+  for (const name of [
+    "maxPages", "maxRedirects", "maxResponseBytes", "timeoutMs", "delayMs", "maxResources", "maxRequests", "maxElapsedMs",
+    "checkInfrastructure", "certificateTransparency", "allowPrivateNetwork", "emailDomain", "dkimSelectors", "authHeaderOrigins", "checkpointPath",
+    "resume", "attackPathRules", "signal", "onProgress", "suppressions", "rendered", "confirmRendered",
+  ]) {
+    if (overrides[name] !== undefined) options[name] = overrides[name];
+  }
   for (const [name, minimum] of [["maxPages", 1], ["maxResources", 1], ["maxRequests", 1], ["maxResponseBytes", 1], ["timeoutMs", 1], ["maxElapsedMs", 1], ["delayMs", 0], ["maxRedirects", 0]]) {
     if (!Number.isInteger(options[name]) || options[name] < minimum) throw new Error(`${name} must be an integer >= ${minimum}.`);
+  }
+  for (const name of ["checkInfrastructure", "certificateTransparency"]) {
+    if (typeof options[name] !== "boolean") throw new Error(`${name} must be a boolean.`);
+  }
+  if (typeof options.allowPrivateNetwork !== "boolean") throw new Error("allowPrivateNetwork must be a boolean.");
+  if (typeof options.rendered !== "boolean" || typeof options.confirmRendered !== "boolean") throw new Error("rendered and confirmRendered must be booleans.");
+  if (options.rendered && !options.confirmRendered) throw new Error("Rendered mode requires confirmRendered: true because target JavaScript will execute.");
+  options.suppressions = normalizeSuppressions(options.suppressions);
+  if (options.certificateTransparency) options.checkInfrastructure = true;
+  options.emailDomain = normalizeEmailDomain(options.emailDomain);
+  if (options.dkimSelectors !== undefined) {
+    if (!Array.isArray(options.dkimSelectors) || options.dkimSelectors.length > 20 || options.dkimSelectors.some((selector) => typeof selector !== "string" || !/^[A-Za-z0-9_-]{1,63}$/.test(selector))) {
+      throw new Error("dkimSelectors must contain at most 20 simple selector names.");
+    }
+    options.dkimSelectors = [...new Set(options.dkimSelectors)];
   }
   return options;
 }
 
-function normalizeAuthHeaderOrigins(value, rootOrigin) {
+export function normalizeAuthHeaderOrigins(value, rootOrigin) {
   const origins = value === undefined ? [rootOrigin] : value;
   if (!Array.isArray(origins) || origins.length === 0) throw new Error("authHeaderOrigins must be a non-empty array when provided.");
   return [...new Set(origins.map((origin) => {
@@ -873,15 +1057,48 @@ function normalizeAuthHeaderOrigins(value, rootOrigin) {
   }))];
 }
 
+function scopeIdentity(scope) {
+  return JSON.stringify({
+    allowedOrigins: [...(scope.allowedOrigins || [])].sort(),
+    includePaths: [...(scope.includePaths || [])].sort(),
+    excludePaths: [...(scope.excludePaths || [])].sort(),
+  });
+}
+
+function validateResume(resume, root, scope) {
+  if (resume === undefined) return;
+  if (!resume || typeof resume !== "object" || resume.schemaVersion !== 2 || !resume.status) throw new Error("Checkpoint must be a schemaVersion 2 object with a status.");
+  if (resume.target !== root.href) throw new Error("Checkpoint target does not match --target.");
+  if (!resume.scope || scopeIdentity(resume.scope) !== scopeIdentity(scope)) throw new Error("Checkpoint scope does not match the supplied scope.");
+  for (const field of ["queued", "deferred", "visited", "findings", "pages", "resources", "requestLog", "inventoryPages", "inventoryClientApiEndpoints", "inventorySourceMaps"]) {
+    if (resume[field] !== undefined && !Array.isArray(resume[field])) throw new Error(`Checkpoint ${field} must be an array.`);
+  }
+  if (resume.requestCount !== undefined && (!Number.isInteger(resume.requestCount) || resume.requestCount < 0)) {
+    throw new Error("Checkpoint requestCount must be a non-negative integer.");
+  }
+  if (resume.wellKnownIndex !== undefined && (!Number.isInteger(resume.wellKnownIndex) || resume.wellKnownIndex < 0 || resume.wellKnownIndex > 9)) {
+    throw new Error("Checkpoint wellKnownIndex must be an integer from 0 to 9.");
+  }
+  if ([...(resume.queued || []), ...(resume.deferred || [])].some((entry) => typeof entry === "object" && entry?.kind !== undefined && !["page", "resource", "unknown"].includes(entry.kind))) {
+    throw new Error("Checkpoint queue contains an unsupported entry kind.");
+  }
+  if (resume.status === "complete") {
+    if (!resume.report || resume.report.target !== root.href || scopeIdentity(resume.report.scope) !== scopeIdentity(scope)) throw new Error("Completed checkpoint report does not match the supplied target and scope.");
+  } else if (resume.status !== "in-progress") {
+    throw new Error(`Unsupported checkpoint status: ${resume.status}`);
+  }
+}
+
 export async function scan(target, overrides = {}) {
+  if (overrides.confirmAuthorized !== true) throw new Error("Refusing to scan without explicit authorization confirmation.");
   const root = normalizeTarget(target);
   const scope = normalizeScope(overrides.scope || { allowedOrigins: [root.origin] });
   assertInScope(root.href, scope);
   const options = normalizeScanOptions(overrides, scope);
   options.authHeaderOrigins = normalizeAuthHeaderOrigins(overrides.authHeaderOrigins, root.origin);
   const resume = overrides.resume;
-  if (resume?.target && resume.target !== root.href) throw new Error("Checkpoint target does not match --target.");
-  if (resume?.scope && JSON.stringify({ allowedOrigins: resume.scope.allowedOrigins, includePaths: resume.scope.includePaths || [], excludePaths: resume.scope.excludePaths || [] }) !== JSON.stringify({ allowedOrigins: scope.allowedOrigins, includePaths: scope.includePaths, excludePaths: scope.excludePaths })) throw new Error("Checkpoint scope does not match the supplied scope.");
+  validateResume(resume, root, scope);
+  if (resume?.status === "complete") return resume.report;
   const startedAt = resume?.startedAt || new Date().toISOString();
   const findings = [...(resume?.findings || [])];
   const pages = [...(resume?.pages || [])];
@@ -890,15 +1107,63 @@ export async function scan(target, overrides = {}) {
   const inventoryPages = [...(resume?.inventoryPages || [])];
   const inventoryClientApiEndpoints = [...(resume?.inventoryClientApiEndpoints || [])];
   const inventorySourceMaps = [...(resume?.inventorySourceMaps || [])];
-  const queued = new Map((resume?.queued || [{ url: root.href, kind: "page" }]).map((entry) => [entry.url || entry, typeof entry === "string" ? "page" : entry.kind || "page"]));
-  const visited = new Set(resume?.visited || []);
+  const queued = new Map();
+  const deferred = [];
+  const deferredUrls = new Set();
+  const visited = new Set((resume?.visited || []).map((value) => normalizeCandidateUrl(value).href));
   let firstResult;
-  let rootAnalyzed = pages.length > 0 || resources.length > 0;
-  let requestCount = resume?.requestCount || requestLog.length;
-  let stopReason = resume?.stopReason || "";
+  let requestCount = resume?.requestCount ?? requestLog.length;
+  let stopReason = "";
+  let wellKnownIndex = resume?.wellKnownIndex ?? 0;
+  const resumedElapsedMs = resume?.elapsedMs || 0;
+  if (!Number.isInteger(resumedElapsedMs) || resumedElapsedMs < 0) throw new Error("Checkpoint elapsedMs must be a non-negative integer.");
   const scanClock = Date.now();
+  const deadlineAt = scanClock + Math.max(0, options.maxElapsedMs - resumedElapsedMs);
+  let pageBudgetReached = false;
+  let resourceBudgetReached = false;
+  let deferredOverflow = false;
+  const maxDeferred = Math.max(1_000, Math.min(10_000, options.maxPages + options.maxResources));
+  const addDeferred = (href, kind) => {
+    if (deferredUrls.has(href) || queued.has(href) || visited.has(href)) return;
+    if (deferred.length >= maxDeferred) {
+      deferredOverflow = true;
+      return;
+    }
+    deferred.push({ url: href, kind });
+    deferredUrls.add(href);
+  };
+  const addQueued = (href, kind) => {
+    if (visited.has(href) || queued.has(href) || deferredUrls.has(href)) return;
+    const queuedPages = [...queued.values()].filter((item) => item !== "resource").length;
+    const queuedResources = [...queued.values()].filter((item) => item === "resource").length;
+    if (kind !== "resource" && pages.length + queuedPages >= options.maxPages) {
+      pageBudgetReached = true;
+      addDeferred(href, kind);
+      return;
+    }
+    if (kind === "resource" && resources.length + queuedResources >= options.maxResources) {
+      resourceBudgetReached = true;
+      addDeferred(href, kind);
+      return;
+    }
+    if (kind === "unknown" && resources.length >= options.maxResources) {
+      resourceBudgetReached = true;
+      addDeferred(href, kind);
+      return;
+    }
+    queued.set(href, kind);
+  };
+  const resumeEntries = resume ? [...(resume.queued || []), ...(resume.deferred || [])] : [{ url: root.href, kind: "page" }];
+  for (const entry of resumeEntries) {
+    const rawUrl = typeof entry === "string" ? entry : entry?.url;
+    if (!rawUrl) throw new Error("Checkpoint queue contains an invalid URL entry.");
+    const candidate = normalizeCandidateUrl(rawUrl);
+    assertInScope(candidate.href, scope);
+    const entryKind = typeof entry === "string" ? "page" : entry.kind || "page";
+    addQueued(candidate.href, entryKind === "page" && candidate.href !== root.href ? "unknown" : entryKind);
+  }
   const progress = (phase, extra = {}) => {
-    try { options.onProgress?.({ phase, target: root.href, pagesScanned: pages.length, resourcesScanned: resources.length, requestsMade: requestCount, elapsedMs: Date.now() - scanClock, ...extra }); } catch { /* progress observers cannot affect scanning */ }
+    try { options.onProgress?.({ phase, target: root.href, pagesScanned: pages.length, resourcesScanned: resources.length, requestsMade: requestCount, elapsedMs: resumedElapsedMs + Date.now() - scanClock, ...extra }); } catch { /* progress observers cannot affect scanning */ }
   };
   const consumeRequest = () => {
     if (requestCount >= options.maxRequests) return false;
@@ -907,88 +1172,122 @@ export async function scan(target, overrides = {}) {
   };
   const canContinue = () => {
     if (options.signal?.aborted) throw abortError(options.signal);
-    if (Date.now() - scanClock >= options.maxElapsedMs) {
+    if (Date.now() >= deadlineAt) {
       stopReason = "Maximum scan duration reached.";
       return false;
     }
     return true;
   };
-  const pacer = createPacer(options.delayMs, options.signal);
+  const remainingMs = () => Math.max(0, deadlineAt - Date.now());
+  const pacer = createPacer(options.delayMs, options.signal, deadlineAt);
 
   const enqueue = (url, kind) => {
-    const href = new URL(url).href;
-    if ([...new URL(href).searchParams.keys()].some((key) => SENSITIVE_QUERY_KEYS.test(key))) return;
-    if (!isInScope(href, scope) || visited.has(href) || queued.has(href)) return;
-    const queuedPages = [...queued.values()].filter((item) => item === "page").length;
-    const queuedResources = [...queued.values()].filter((item) => item !== "page").length;
-    if (kind === "page" && pages.length + queuedPages >= options.maxPages) return;
-    if (kind !== "page" && resources.length + queuedResources >= options.maxResources) return;
+    let href;
+    try {
+      href = normalizeCandidateUrl(url).href;
+    } catch {
+      return;
+    }
+    if (!isInScope(href, scope) || visited.has(href) || queued.has(href) || deferredUrls.has(href)) return;
+    const queuedPages = [...queued.values()].filter((item) => item !== "resource").length;
+    const queuedResources = [...queued.values()].filter((item) => item === "resource").length;
+    if (kind !== "resource" && pages.length + queuedPages >= options.maxPages) {
+      pageBudgetReached = true;
+      addDeferred(href, kind);
+      return;
+    }
+    if (kind === "resource" && resources.length + queuedResources >= options.maxResources) {
+      resourceBudgetReached = true;
+      addDeferred(href, kind);
+      return;
+    }
+    if (kind === "unknown" && resources.length >= options.maxResources) {
+      resourceBudgetReached = true;
+      addDeferred(href, kind);
+      return;
+    }
     queued.set(href, kind);
   };
 
   progress("started");
-  while (queued.size && pages.length < options.maxPages && !stopReason) {
+  while (queued.size && !stopReason) {
     if (!canContinue()) break;
     const [nextUrl, kind] = queued.entries().next().value;
     queued.delete(nextUrl);
     if (visited.has(nextUrl)) continue;
+    if (kind === "unknown" && resources.length >= options.maxResources) {
+      resourceBudgetReached = true;
+      addDeferred(nextUrl, kind);
+      stopReason = "Maximum resource budget reached.";
+      break;
+    }
     visited.add(nextUrl);
 
     let result;
     try {
-      progress("request-started", { url: nextUrl, kind });
-      result = await fetchBounded(nextUrl, options, { consumeRequest, pacer });
+      progress("request-started", { url: redactUrl(nextUrl), kind });
+      result = await fetchBounded(nextUrl, options, { consumeRequest, pacer, deadlineAt });
     } catch (error) {
+      if (error.requestLog?.length) requestLog.push(...error.requestLog);
       if (error instanceof ScanBudgetError) {
+        visited.delete(nextUrl);
+        queued.set(nextUrl, kind);
         stopReason = error.message;
         break;
       }
+      if (error.code === "BROWSER_MODE_UNAVAILABLE") throw error;
       // Only an operator cancellation ends the scan. A request that merely timed
       // out is recorded as a finding and the scan carries on.
       if (options.signal?.aborted) throw error;
       const timedOut = error.name === "AbortError";
-      const failure = timedOut ? `The request timed out after ${options.timeoutMs} ms.` : error.message;
-      requestLog.push({ url: nextUrl, status: null, elapsedMs: null, error: failure });
+      const failure = timedOut ? `The request timed out after ${Math.min(options.timeoutMs, Math.max(1, options.maxElapsedMs - (resumedElapsedMs + Date.now() - scanClock)))} ms.` : error.message;
+      if (!error.requestLog?.length) requestLog.push({ url: redactUrl(nextUrl), status: null, elapsedMs: null, error: redactText(failure), ...(error.code ? { code: error.code } : {}) });
       findings.push(finding(
         "request-failed",
         "info",
         "Request could not be completed",
         failure,
-        nextUrl,
+        redactUrl(nextUrl),
         "Verify the target is available and repeat the scan with an appropriate timeout.",
       ));
-      progress("request-failed", { url: nextUrl, error: failure });
+      progress("request-failed", { url: redactUrl(nextUrl), error: redactText(failure) });
       continue;
     }
 
-    if (!firstResult) firstResult = result;
+    const isFirstResponse = !firstResult;
+    if (isFirstResponse) firstResult = result;
     requestLog.push(...result.requests);
-    progress("request-completed", { url: nextUrl, kind, status: result.response.status });
+    progress("request-completed", { url: redactUrl(nextUrl), kind, status: result.response.status });
     const contentType = headerValue(result.response.headers, "content-type");
-    const isHtml = kind === "page" && (/(?:text\/html|application\/xhtml\+xml)/i.test(contentType) || !contentType);
+    const isHtml = kind !== "resource" && looksLikeHtmlDocument(result.body.text, contentType);
     const entry = {
       requestedUrl: redactUrl(nextUrl),
       finalUrl: redactUrl(result.finalUrl),
       status: result.response.status,
       contentType,
-      bytesRead: new TextEncoder().encode(result.body.text).byteLength,
+      bytesRead: result.body.bytesRead,
       truncated: result.body.truncated,
-      kind,
+      kind: isHtml ? "page" : "resource",
     };
-    if (isHtml) pages.push(entry); else resources.push(entry);
+    const resourceLimitReached = !isHtml && resources.length >= options.maxResources;
+    if (resourceLimitReached) resourceBudgetReached = true;
+    if (isHtml) pages.push(entry); else if (!resourceLimitReached) resources.push(entry);
 
-    if (!rootAnalyzed) {
-      rootAnalyzed = true;
+    if (isHtml) {
       addHeaderFindings(findings, result.response.headers, result.finalUrl);
       addCookieFindings(findings, result.response.headers, result.finalUrl);
-      if (root.protocol === "http:") {
-        if (new URL(result.finalUrl).protocol === "https:") {
+      const finalProtocol = new URL(result.finalUrl).protocol;
+      if (isFirstResponse) {
+        if (root.protocol === "http:" && finalProtocol === "https:") {
           findings.push(finding("http-redirects-to-https", "info", "HTTP redirects to HTTPS", "The target redirected the initial HTTP request to HTTPS.", root.href, "Keep the redirect and consider HSTS after confirming all subdomains are HTTPS-ready."));
-        } else {
+        } else if (root.protocol === "http:" && finalProtocol === "http:") {
           findings.push(finding("site-served-over-http", "high", "Site is served over HTTP", "The initial target and final response are not encrypted with HTTPS.", result.finalUrl, "Deploy HTTPS and redirect every HTTP request to the HTTPS origin."));
         }
       }
-      if (new URL(result.finalUrl).protocol === "https:" && !headerValue(result.response.headers, "strict-transport-security")) {
+      if (root.protocol === "https:" && (result.chain || []).some((hop) => new URL(hop.from).protocol === "https:" && new URL(hop.to).protocol === "http:")) {
+        findings.push(finding("https-redirects-to-http", "high", "HTTPS redirects to HTTP", "The navigation chain downgraded from HTTPS to an unencrypted HTTP URL.", result.finalUrl, "Reject HTTPS-to-HTTP redirects and keep the complete navigation path encrypted."));
+      }
+      if (finalProtocol === "https:" && !headerValue(result.response.headers, "strict-transport-security")) {
         findings.push(finding("missing-hsts", "low", "Strict transport security is missing", "The HTTPS response does not include Strict-Transport-Security.", result.finalUrl, "After confirming all relevant subdomains support HTTPS, add a carefully staged HSTS policy."));
       }
     }
@@ -1003,10 +1302,11 @@ export async function scan(target, overrides = {}) {
       inventorySourceMaps.push(...client.sourceMaps);
       inventoryPages.push(pageInventory);
       if (!result.body.truncated) {
+        for (const sourceMap of client.sourceMaps) enqueue(sourceMap, "resource");
         for (const link of extractLinks(result.body.text, result.finalUrl)) {
-          const resource = RESOURCE_EXTENSIONS.test(link.pathname + link.search);
+          const resource = isLikelyResourceUrl(link);
           if (!resource && SKIPPED_EXTENSIONS.test(link.pathname + link.search)) continue;
-          enqueue(link.href, resource ? "resource" : "page");
+          enqueue(link.href, resource ? "resource" : "unknown");
         }
         for (const tag of extractAttributeTags(result.body.text, "script")) {
           const source = attribute(tag, "src");
@@ -1019,18 +1319,26 @@ export async function scan(target, overrides = {}) {
           }
         }
       }
-    } else if (/^(?:application\/javascript|text\/javascript|application\/json|text\/json)\b/i.test(contentType) || RESOURCE_EXTENSIONS.test(nextUrl)) {
+    } else if (!resourceLimitReached && (/^(?:application\/javascript|text\/javascript|application\/json|text\/json)\b/i.test(contentType) || RESOURCE_EXTENSIONS.test(nextUrl))) {
       const client = addClientFindings(findings, result.body.text, result.finalUrl, contentType);
       inventoryClientApiEndpoints.push(...client.endpoints);
       inventorySourceMaps.push(...client.sourceMaps);
+      if (!result.body.truncated) for (const sourceMap of client.sourceMaps) enqueue(sourceMap, "resource");
+    }
+    if (!isHtml && kind !== "resource" && resources.length >= options.maxResources) {
+      resourceBudgetReached = true;
+      stopReason = "Maximum resource budget reached.";
     }
 
-      await writeCheckpoint(options.checkpointPath, {
+    await writeCheckpoint(options.checkpointPath, {
       status: "in-progress",
       target: root.href,
       scope: { name: scope.name, allowedOrigins: scope.allowedOrigins, includePaths: scope.includePaths, excludePaths: scope.excludePaths },
       startedAt,
+      elapsedMs: resumedElapsedMs + Date.now() - scanClock,
       queued: [...queued].map(([url, entryKind]) => ({ url, kind: entryKind })),
+      deferred,
+      wellKnownIndex,
       visited: [...visited],
       pages,
       resources,
@@ -1046,19 +1354,46 @@ export async function scan(target, overrides = {}) {
 
   if (!stopReason && canContinue()) {
     try {
-      await checkWellKnownPaths(root, options, findings, { consumeRequest, requestLog, progress, pacer, canContinue });
+      await checkWellKnownPaths(root, options, findings, { consumeRequest, requestLog, progress, pacer, canContinue, deadlineAt, startIndex: wellKnownIndex, onIndex: (index) => { wellKnownIndex = index; } });
     } catch (error) {
       if (error instanceof ScanBudgetError) stopReason = error.message;
       else if (options.signal?.aborted) throw error;
     }
   }
   if (!stopReason && queued.size) stopReason = pages.length >= options.maxPages ? "Maximum page budget reached." : "Maximum resource budget reached.";
+  if (!stopReason && pageBudgetReached) stopReason = "Maximum page budget reached.";
+  if (!stopReason && resourceBudgetReached) stopReason = "Maximum resource budget reached.";
+  if (!stopReason && deferred.length) stopReason = pageBudgetReached ? "Maximum page budget reached." : "Maximum resource budget reached.";
   let infrastructure = { metadata: null, findings: [], skipped: "Infrastructure checks disabled." };
-  if (options.checkInfrastructure) infrastructure = await inspectInfrastructure(root.href, options);
+  if (options.checkInfrastructure && !stopReason) {
+    try {
+      infrastructure = await inspectInfrastructure(root.href, {
+        ...options,
+        remainingMs,
+        beforeRequest: async () => {
+          await pacer.wait();
+          if (!canContinue()) throw new ScanBudgetError("Maximum scan duration reached.");
+          if (!consumeRequest()) throw new ScanBudgetError("Maximum request budget reached.");
+        },
+        afterRequest: () => pacer.done(),
+      });
+    } catch (error) {
+      if (error instanceof ScanBudgetError || error.code === "SCAN_BUDGET_EXHAUSTED") {
+        stopReason = error.message;
+        infrastructure = { metadata: null, findings: [], skipped: `Infrastructure checks stopped early: ${error.message}` };
+      } else if (options.signal?.aborted) {
+        throw error;
+      } else {
+        throw error;
+      }
+    }
+  }
   for (const item of infrastructure.findings || []) findings.push(finding(item.id, item.severity, item.title, item.evidence, item.location, item.remediation));
-  const finalFindings = uniqueFindings(findings);
-  const attackPaths = buildAttackPaths(finalFindings, options.attackPathRules || DEFAULT_ATTACK_PATH_RULES);
-  const risk = calculateRisk(finalFindings, attackPaths);
+  const finalFindings = applyTriage(uniqueFindings(findings), options.suppressions);
+  const activeFindings = actionableFindings(finalFindings);
+  const triage = triageCounts(finalFindings);
+  const attackPaths = buildAttackPaths(activeFindings, options.attackPathRules || DEFAULT_ATTACK_PATH_RULES);
+  const risk = calculateRisk(activeFindings, attackPaths);
   const counts = finalFindings.reduce((result, item) => {
     result[item.severity] = (result[item.severity] || 0) + 1;
     return result;
@@ -1076,16 +1411,19 @@ export async function scan(target, overrides = {}) {
   delete limits.attackPathRules;
   delete limits.signal;
   delete limits.onProgress;
-  const elapsedMs = Date.now() - scanClock;
+  delete limits.confirmAuthorized;
+  delete limits.suppressions;
+  delete limits.confirmRendered;
+  const elapsedMs = resumedElapsedMs + Date.now() - scanClock;
   const report = {
     schemaVersion: 2,
-    scanner: { name: "SentinelScan", version: "0.5.0", mode: "bounded-passive" },
+    scanner: { name: "SentinelScan", version: "0.5.0", mode: options.rendered ? "bounded-rendered" : "bounded-passive" },
     target: root.href,
     scope: { name: scope.name, allowedOrigins: scope.allowedOrigins, includePaths: scope.includePaths, excludePaths: scope.excludePaths },
     startedAt,
     finishedAt: new Date().toISOString(),
     limits,
-    summary: { pagesScanned: pages.length, resourcesScanned: resources.length, requestsMade: requestCount, elapsedMs, termination: stopReason || "queue-exhausted", findings: finalFindings.length, bySeverity: counts, byConfidence: confidence, attackPaths: attackPaths.length, riskScore: risk.score, riskGrade: risk.grade },
+     summary: { pagesScanned: pages.length, resourcesScanned: resources.length, requestsMade: requestCount, elapsedMs, termination: stopReason || "queue-exhausted", findings: finalFindings.length, ...triage, bySeverity: counts, byConfidence: confidence, attackPaths: attackPaths.length, riskScore: risk.score, riskGrade: risk.grade },
     pages,
     resources,
     requests: requestLog,
@@ -1105,19 +1443,44 @@ export async function scan(target, overrides = {}) {
       },
     },
     findings: finalFindings,
+    suppressions: options.suppressions,
     attackPaths,
     risk,
     notes: [
-      "This report contains observations from safe GET requests only.",
+      "This report contains observations from safe GET and HEAD requests only.",
       "A finding is a lead for review, not proof of exploitability.",
       "Repeated observations receive diminishing risk weight so crawl depth does not dominate prioritization.",
       `Execution budget: ${requestCount}/${options.maxRequests} requests, ${elapsedMs}ms/${options.maxElapsedMs}ms.`,
       stopReason ? `Scan stopped early: ${stopReason}` : "Scan completed its available queue.",
+      ...(deferredOverflow ? ["The deferred queue reached its safety cap; rerun with a narrower scope or smaller pages before resuming."] : []),
+      ...(requestLog.some((request) => request.code === "NETWORK_POLICY_BLOCKED") ? ["One or more requests were blocked by the private-network and URL network policy."] : []),
       firstResult?.finalUrl ? `Initial request resolved to ${redactUrl(firstResult.finalUrl)}.` : "The initial request did not complete.",
       infrastructure.skipped ? infrastructure.skipped : "Infrastructure metadata checks were enabled.",
     ],
   };
-  await writeCheckpoint(options.checkpointPath, { status: "complete", target: root.href, scope: report.scope, startedAt, finishedAt: report.finishedAt, report });
+  const resumable = Boolean(stopReason && /Maximum (?:scan duration reached|request budget reached|page budget reached|resource budget reached)\./.test(stopReason));
+  await writeCheckpoint(options.checkpointPath, {
+    status: resumable ? "in-progress" : "complete",
+    target: root.href,
+    scope: report.scope,
+    startedAt,
+    finishedAt: report.finishedAt,
+    elapsedMs,
+    queued: [...queued].map(([url, entryKind]) => ({ url, kind: entryKind })),
+    deferred,
+    wellKnownIndex,
+    visited: [...visited],
+    pages,
+    resources,
+    requestLog,
+    requestCount,
+    stopReason,
+    inventoryPages,
+    inventoryClientApiEndpoints,
+    inventorySourceMaps,
+    findings,
+    ...(resumable ? {} : { report }),
+  });
   return report;
 }
 

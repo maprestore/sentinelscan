@@ -34,7 +34,7 @@ flowchart LR
 ```
 
 1. **You** decide what is in scope and confirm authorization.
-2. **SentinelScan** sends bounded `GET` requests that never leave that scope.
+2. **SentinelScan** sends bounded `GET`/`HEAD` requests that never leave that scope.
 3. **Findings** carry evidence, confidence, and a fix. Related findings are correlated into attack paths.
 4. **You** review the leads. They are not proof of exploitability.
 

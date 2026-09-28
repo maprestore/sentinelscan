@@ -7,6 +7,18 @@ on:
         description: "HTTP(S) target included in SENTINEL_SCOPE_JSON"
         required: true
         type: string
+      fail_on_severity:
+        description: "Fail after the scan on actionable findings at or above this level"
+        required: false
+        default: high
+        type: choice
+        options: [info, low, medium, high]
+      fail_on_baseline:
+        description: "Fail on baseline changes when a baseline is supplied"
+        required: false
+        default: never
+        type: choice
+        options: [never, new, changed, regressed]
 
 permissions:
   contents: read
@@ -23,26 +35,50 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22.x
-      - name: Write private scope file
+      - name: Run bounded authorized scan
         shell: bash
+        env:
+          SENTINEL_SCOPE_JSON: ${{ secrets.SENTINEL_SCOPE_JSON }}
         run: |
+          set -euo pipefail
+          umask 077
           test -n "$SENTINEL_SCOPE_JSON"
           printf '%s' "$SENTINEL_SCOPE_JSON" > scope.local.json
-      - name: Run bounded authorized scan
-        run: |
+          trap 'rm -f scope.local.json' EXIT
           mkdir -p reports
-          node src/cli.mjs \
-            --target "$TARGET" \
-            --scope scope.local.json \
-            --confirm-authorized \
-            --format sarif \
-            --out reports/sentinelscan.sarif
+           set +e
+           node src/cli.mjs \
+             --target "$TARGET" \
+             --scope scope.local.json \
+             --confirm-authorized \
+             --format json \
+             --out reports/sentinelscan.json \
+             --sarif-out reports/sentinelscan.sarif \
+             --fail-on-severity "${{ inputs.fail_on_severity }}" \
+             --fail-on-baseline "${{ inputs.fail_on_baseline }}" > /dev/null
+           status=$?
+           set -e
+           printf '%s\n' "$status" > reports/sentinelscan.exit
+           test "$status" -eq 0 -o "$status" -eq 2
       - name: Upload findings to GitHub Code Scanning
+        if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: reports/sentinelscan.sarif
           category: sentinelscan
+      - name: Upload SentinelScan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinelscan-report
+          path: reports/
+      - name: Enforce scan policy
+        if: always()
+        shell: bash
+        run: test "$(< reports/sentinelscan.exit)" -eq 0

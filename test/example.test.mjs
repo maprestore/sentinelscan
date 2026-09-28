@@ -11,6 +11,8 @@ test("the bundled weak demo site produces the findings shown in the README", asy
   const origin = `http://127.0.0.1:${port}`;
 
   const report = await scan(`${origin}/`, {
+    confirmAuthorized: true,
+    allowPrivateNetwork: true,
     delayMs: 0,
     scope: { name: "local-weak-demo", allowedOrigins: [origin] },
   });
