@@ -45,6 +45,11 @@ function send(response, status, body, type) {
     "content-type": type,
     "cache-control": "no-store",
     "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "content-security-policy": "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+    "referrer-policy": "no-referrer",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "cross-origin-resource-policy": "same-origin",
   });
   response.end(body);
 }
@@ -275,7 +280,7 @@ const server = createServer(async (request, response) => {
   try {
     if (["POST", "DELETE"].includes(request.method) || (request.method === "GET" && /^\/api\/scans\//.test(request.url || ""))) assertMutationAccess(request);
     if (request.method === "GET" && request.url === "/api/health") {
-      return json(response, 200, { realScan: true, mode: "bounded-passive", targetRequests: "GET/HEAD only", version: "0.5.0", activeJobs: [...jobs.values()].filter((job) => job.status === "queued" || job.status === "running").length, persistence: Boolean(DATA_DIR), capabilities: ["multi-origin scopes", "client API inventory", "resumable CLI scans", "progress and cancellation", "private-network policy", "finding triage", "optional DNS/TLS/email/CT metadata", "optional rendered mode"] });
+      return json(response, 200, { realScan: true, mode: "bounded-passive", targetRequests: "GET/HEAD only", version: "0.5.0", activeJobs: [...jobs.values()].filter((job) => job.status === "queued" || job.status === "running").length, persistence: Boolean(DATA_DIR), capabilities: ["multi-origin scopes", "client API inventory", "resumable CLI scans", "progress and cancellation", "private-network policy", "finding triage", "scan identity and integrity", "coverage-aware baselines", "optional DNS/TLS/email/CT metadata", "optional rendered mode"] });
     }
     if (request.method === "POST" && request.url === "/api/scan") {
       if (!enforceRateLimit(request, response, "sync")) return;

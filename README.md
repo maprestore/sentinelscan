@@ -13,7 +13,7 @@
 [![CodeQL](https://github.com/maprestore/sentinelscan/actions/workflows/codeql.yml/badge.svg)](https://github.com/maprestore/sentinelscan/actions/workflows/codeql.yml)
 ![Node.js](https://img.shields.io/badge/node-%E2%89%A5%2020-b9ff4c?style=flat-square&logo=node.js&logoColor=white&labelColor=0b1416)
 ![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-44e6f2?style=flat-square&labelColor=0b1416)
-![Requests](https://img.shields.io/badge/requests-GET%20only-ff4fd8?style=flat-square&labelColor=0b1416)
+![Requests](https://img.shields.io/badge/requests-GET%2FHEAD-ff4fd8?style=flat-square&labelColor=0b1416)
 ![Version](https://img.shields.io/badge/version-0.5.0-ffbd5a?style=flat-square&labelColor=0b1416)
 [![License: MIT](https://img.shields.io/badge/license-MIT-b9ff4c?style=flat-square&labelColor=0b1416)](LICENSE)
 
@@ -21,7 +21,7 @@
 
 <br>
 
- | **49** | **5** | **4** | **0** | **61** |
+ | **49** | **5** | **4** | **0** | **68** |
 | :---: | :---: | :---: | :---: | :---: |
 | finding types | attack-path rules | report formats | runtime dependencies | offline tests |
 
@@ -107,6 +107,7 @@ The CLI refuses to send a single request without **both** `--scope` and `--confi
 | **🧭 Scope gate**<br>Exact origins, multiple origins, and leading-subdomain wildcards, plus include/exclude paths. | **🛰️ Bounded GET engine**<br>Crawls HTML, JS, JSON, and source maps inside independent page, resource, request, and time budgets. | **🔎 49 finding types**<br>Transport, browser policy, cookies, auth forms, client exposure, disclosure, and infrastructure. |
 | **🧠 Confidence-aware risk**<br>Candidates are discounted; repeats have diminishing returns; nothing is a black box. | **🔗 Attack paths**<br>Declarative rules turn separate findings into a story a reviewer can act on. | **📦 Four formats**<br>Text, JSON, standalone HTML, and SARIF 2.1.0 for GitHub Code Scanning. |
 | **♻️ Baselines**<br>Compare runs: new, resolved, unchanged, severity-changed, and risk delta. | **⏸️ Resumable**<br>Atomic checkpoints let an interrupted scan pick up where it stopped. | **🖥️ Local dashboard**<br>Async jobs with live progress and cancel, bound to localhost. |
+| **🧾 Verifiable artifacts**<br>Reports and checkpoints carry SHA-256 integrity, scan identity, and coverage state. | **✅ CI-safe contracts**<br>Validate scope, config, suppressions, reports, and checkpoints offline before a job runs. | **🛑 Complete-scan gates**<br>Fail CI when a budget-stopped scan would make a baseline comparison misleading. |
 
 ## 🧠 How it works
 
@@ -265,7 +266,7 @@ node src/cli.mjs \
 ```
 Reports **new**, **resolved**, **unchanged**, and **severity-changed** findings, plus the risk delta.
 
-Use `--fail-on-severity high` or `--fail-on-baseline regressed` to make CI return exit code `2` while still writing the report.
+Use `--fail-on-severity high`, `--fail-on-baseline regressed`, or `--fail-on-incomplete` to make CI return exit code `2` while still writing the report.
 
 </td>
 <td width="50%" valign="top">
@@ -278,7 +279,14 @@ node src/cli.mjs ... --checkpoint reports/scan.ckpt.json
 # ...and pick up after an interruption
 node src/cli.mjs ... --resume reports/scan.ckpt.json
 ```
-Checkpoints are written atomically and refuse to resume against a different target or scope.
+Checkpoints are written atomically, carry an integrity hash, and refuse to resume against a different target or scope.
+
+**🧾 Validate artifacts before CI runs**
+```bash
+node src/cli.mjs validate config config.example.json --json
+node src/cli.mjs validate report reports/main.json --json
+```
+Validation is offline and returns exit code `1` for malformed, unsafe, tampered, or incompatible JSON.
 
 </td>
 </tr>
@@ -457,7 +465,7 @@ A security tool should be easy to audit. The passive scanner is plain Node.js (`
 ## 🧪 Development
 
 ```bash
-npm test          # 61 fixture-based tests; no internet required
+npm test          # 68 fixture-based tests; no internet required
 ```
 
 The tests use local fixture servers and never contact the public internet. To add a detector, see [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -31,7 +31,14 @@ test("required baseline fails when no baseline was supplied", () => {
 });
 
 test("exit policy values are strictly normalized", () => {
-  assert.deepEqual(normalizeExitPolicy(), { failOnSeverity: null, failOnBaseline: "never", requireBaseline: false });
+  assert.deepEqual(normalizeExitPolicy(), { failOnSeverity: null, failOnBaseline: "never", requireBaseline: false, failOnIncomplete: false });
   assert.throws(() => normalizeExitPolicy({ failOnSeverity: "critical" }), /failOnSeverity/);
   assert.throws(() => normalizeExitPolicy({ failOnBaseline: "all" }), /failOnBaseline/);
+  assert.throws(() => normalizeExitPolicy({ failOnIncomplete: "yes" }), /failOnIncomplete/);
+});
+
+test("incomplete scans can be made blocking", () => {
+  const result = evaluateExitPolicy({ findings: [], summary: { termination: "Maximum request budget reached." }, coverage: { complete: false, termination: "Maximum request budget reached." } }, { failOnIncomplete: true });
+  assert.equal(result.failed, true);
+  assert.match(result.reasons[0], /incomplete/i);
 });

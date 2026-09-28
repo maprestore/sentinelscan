@@ -186,6 +186,8 @@ curl -s http://127.0.0.1:4173/api/health
     "progress and cancellation",
     "private-network policy",
     "finding triage",
+    "scan identity and integrity",
+    "coverage-aware baselines",
     "optional DNS/TLS/email/CT metadata",
     "optional rendered mode"
   ]

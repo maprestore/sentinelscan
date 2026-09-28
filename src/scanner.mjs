@@ -4,9 +4,10 @@ import { assertInScope, normalizeScope } from "./scope.mjs";
 import { inspectInfrastructure } from "./infrastructure.mjs";
 import { buildAttackPaths, calculateRisk, DEFAULT_ATTACK_PATH_RULES } from "./risk.mjs";
 import { fetchWithNetworkPolicy } from "./network-policy.mjs";
-import { getDetector } from "./detector-registry.mjs";
+import { DETECTOR_CATALOG, getDetector } from "./detector-registry.mjs";
 import { actionableFindings, applyTriage, normalizeSuppressions, triageCounts } from "./triage.mjs";
 import { fetchRendered } from "./browser-renderer.mjs";
+import { addIntegrity, buildScanIdentity, verifyIntegrity } from "./provenance.mjs";
 
 const DEFAULTS = {
   maxPages: 20,
@@ -984,7 +985,8 @@ async function checkWellKnownPaths(rootUrl, options, findings, controls = {}) {
 async function writeCheckpoint(path, state) {
   if (!path) return;
   const temporaryPath = `${path}.${process.pid}.tmp`;
-  await writeFile(temporaryPath, `${JSON.stringify({ schemaVersion: 2, ...state }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  const checkpoint = addIntegrity({ schemaVersion: 2, ...state });
+  await writeFile(temporaryPath, `${JSON.stringify(checkpoint, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   await rename(temporaryPath, path);
   await chmod(path, 0o600);
 }
@@ -1068,6 +1070,8 @@ function scopeIdentity(scope) {
 function validateResume(resume, root, scope) {
   if (resume === undefined) return;
   if (!resume || typeof resume !== "object" || resume.schemaVersion !== 2 || !resume.status) throw new Error("Checkpoint must be a schemaVersion 2 object with a status.");
+  if (resume.integrity !== undefined && !verifyIntegrity(resume)) throw new Error("Checkpoint integrity hash does not match the supplied file.");
+  if (resume.report?.integrity !== undefined && !verifyIntegrity(resume.report)) throw new Error("Completed checkpoint report integrity hash does not match the supplied file.");
   if (resume.target !== root.href) throw new Error("Checkpoint target does not match --target.");
   if (!resume.scope || scopeIdentity(resume.scope) !== scopeIdentity(scope)) throw new Error("Checkpoint scope does not match the supplied scope.");
   for (const field of ["queued", "deferred", "visited", "findings", "pages", "resources", "requestLog", "inventoryPages", "inventoryClientApiEndpoints", "inventorySourceMaps"]) {
@@ -1415,14 +1419,32 @@ export async function scan(target, overrides = {}) {
   delete limits.suppressions;
   delete limits.confirmRendered;
   const elapsedMs = resumedElapsedMs + Date.now() - scanClock;
+  const scanner = { name: "SentinelScan", version: "0.5.0", mode: options.rendered ? "bounded-rendered" : "bounded-passive" };
+  const coverage = {
+    complete: !stopReason,
+    termination: stopReason || "queue-exhausted",
+    pages: pages.length,
+    resources: resources.length,
+    requests: requestCount,
+    deferred: deferred.length,
+  };
+  const scanIdentity = buildScanIdentity({
+    scanner,
+    scope: { name: scope.name, allowedOrigins: scope.allowedOrigins, includePaths: scope.includePaths, excludePaths: scope.excludePaths },
+    limits,
+    detectorCatalog: DETECTOR_CATALOG,
+    attackPathRules: options.attackPathRules || DEFAULT_ATTACK_PATH_RULES,
+  });
   const report = {
     schemaVersion: 2,
-    scanner: { name: "SentinelScan", version: "0.5.0", mode: options.rendered ? "bounded-rendered" : "bounded-passive" },
+    scanner,
     target: root.href,
     scope: { name: scope.name, allowedOrigins: scope.allowedOrigins, includePaths: scope.includePaths, excludePaths: scope.excludePaths },
     startedAt,
     finishedAt: new Date().toISOString(),
     limits,
+    scanIdentity,
+    coverage,
      summary: { pagesScanned: pages.length, resourcesScanned: resources.length, requestsMade: requestCount, elapsedMs, termination: stopReason || "queue-exhausted", findings: finalFindings.length, ...triage, bySeverity: counts, byConfidence: confidence, attackPaths: attackPaths.length, riskScore: risk.score, riskGrade: risk.grade },
     pages,
     resources,
@@ -1458,6 +1480,7 @@ export async function scan(target, overrides = {}) {
       infrastructure.skipped ? infrastructure.skipped : "Infrastructure metadata checks were enabled.",
     ],
   };
+  const finalizedReport = addIntegrity(report);
   const resumable = Boolean(stopReason && /Maximum (?:scan duration reached|request budget reached|page budget reached|resource budget reached)\./.test(stopReason));
   await writeCheckpoint(options.checkpointPath, {
     status: resumable ? "in-progress" : "complete",
@@ -1479,9 +1502,9 @@ export async function scan(target, overrides = {}) {
     inventoryClientApiEndpoints,
     inventorySourceMaps,
     findings,
-    ...(resumable ? {} : { report }),
+    ...(resumable ? {} : { report: finalizedReport }),
   });
-  return report;
+  return finalizedReport;
 }
 
 export { DEFAULTS };

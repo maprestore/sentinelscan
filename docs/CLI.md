@@ -2,6 +2,7 @@
 
 ```bash
 node src/cli.mjs --target <url> --scope <file> --confirm-authorized [options]
+node src/cli.mjs validate <type> <path> [--json]
 ```
 
 Run `node src/cli.mjs --help` for the built-in summary.
@@ -14,6 +15,7 @@ Run `node src/cli.mjs --help` for the built-in summary.
 - [Checkpoints and baselines](#checkpoints-and-baselines)
 - [Rendered mode and triage](#rendered-mode-and-triage)
 - [Config file](#config-file)
+- [Offline validation](#offline-validation)
 - [Scope file](#scope-file)
 - [Exit codes](#exit-codes)
 - [Recipes](#recipes)
@@ -95,6 +97,7 @@ Opt-in passive DNS, TLS, and email-policy metadata.
 | `--fail-on-severity <level>` | Exit with code `2` when an actionable finding meets the selected severity threshold. |
 | `--fail-on-baseline <never\|new\|changed\|regressed>` | Exit with code `2` when the baseline policy matches. Suppressed findings are not actionable. |
 | `--require-baseline` | Exit with code `2` if no baseline was supplied. |
+| `--fail-on-incomplete` | Exit with code `2` if a scan stops before its queue is exhausted. |
 
 A baseline comparison adds a `comparison` object to the report:
 
@@ -102,7 +105,9 @@ A baseline comparison adds a `comparison` object to the report:
 | --- | --- |
 | `summary.new` / `resolved` / `unchanged` / `changed` | Counts of findings by change type (matched by fingerprint) |
 | `summary.riskDelta` | Current score minus baseline score |
-| `summary.status` | `regressed` (new findings, or a severity increase), `improved`, or `unchanged` |
+| `summary.status` | `regressed`, `improved`, `unchanged`, or `inconclusive` when coverage shrinks or the current scan stops early |
+| `summary.inconclusiveReasons` | Why a comparison should not be treated as proof of improvement |
+| `summary.scanIdentityChanged` | Whether effective limits, detector metadata, or correlation rules changed |
 | `newFindings`, `resolvedFindings`, `unchangedFindings`, `changedFindings` | The findings themselves |
 
 > [!NOTE]
@@ -139,7 +144,20 @@ Suppressions are exact fingerprint matches and remain visible in `findings`. `su
 }
 ```
 
-See [`config.example.json`](../config.example.json).
+See [`config.example.json`](../config.example.json). The config is strict: unknown properties and limits above the documented safety ceilings are rejected by `validate config`.
+
+## Offline validation
+
+Validation never performs DNS, HTTP, browser, or third-party lookups. It is safe to run before a scan in CI:
+
+```bash
+node src/cli.mjs validate config config.example.json --json
+node src/cli.mjs validate scope scope.local.json
+node src/cli.mjs validate report reports/main.json --json
+node src/cli.mjs validate checkpoint reports/scan.ckpt.json --json
+```
+
+Supported artifact types are `scope`, `config`, `suppressions`, `report`, and `checkpoint`. A generated report or checkpoint must have a matching SHA-256 integrity hash; legacy files without a hash are accepted with a warning. The embedded hash detects accidental or transit mutation; for a hostile storage boundary, keep a trusted copy of the hash outside the artifact.
 
 ## Scope file
 
@@ -169,9 +187,9 @@ Ports and schemes must match exactly: `https://example.com` does not allow `http
 
 | Code | Meaning |
 | ---: | --- |
-| `0` | The scan (or `--help`) completed. **This includes runs that found problems** |
+| `0` | The scan, validation, or `--help` completed. **This includes runs that found problems** |
 | `1` | SentinelScan itself failed: bad arguments, a missing `--scope` or `--confirm-authorized`, an out-of-scope target, an unreadable file |
-| `2` | The scan completed, but the configured severity, baseline, or required-baseline policy failed |
+| `2` | The scan completed, but the configured severity, baseline, required-baseline, or completeness policy failed |
 
 Without an explicit failure policy, findings do not change the exit code because they are review leads, not test failures.
 

@@ -3,7 +3,7 @@
   "$id": "https://sentinelscan.example/schemas/report.schema.json",
   "title": "SentinelScan report",
   "type": "object",
-  "required": ["schemaVersion", "scanner", "target", "scope", "startedAt", "finishedAt", "limits", "summary", "findings", "attackPaths", "risk"],
+  "required": ["schemaVersion", "scanner", "target", "scope", "startedAt", "finishedAt", "limits", "scanIdentity", "coverage", "integrity", "summary", "findings", "attackPaths", "risk"],
   "properties": {
     "schemaVersion": { "const": 2 },
     "scanner": { "type": "object", "required": ["name", "version", "mode"], "properties": { "name": { "type": "string" }, "version": { "type": "string" }, "mode": { "enum": ["bounded-passive", "bounded-rendered"] } }, "additionalProperties": true },
@@ -12,6 +12,9 @@
     "startedAt": { "type": "string", "format": "date-time" },
     "finishedAt": { "type": "string", "format": "date-time" },
     "limits": { "type": "object" },
+    "scanIdentity": { "type": "object", "required": ["algorithm", "value"], "properties": { "algorithm": { "const": "sha256" }, "value": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }, "additionalProperties": false },
+    "coverage": { "type": "object", "required": ["complete", "termination", "pages", "resources", "requests", "deferred"], "properties": { "complete": { "type": "boolean" }, "termination": { "type": "string" }, "pages": { "type": "integer", "minimum": 0 }, "resources": { "type": "integer", "minimum": 0 }, "requests": { "type": "integer", "minimum": 0 }, "deferred": { "type": "integer", "minimum": 0 } }, "additionalProperties": false },
+    "integrity": { "type": "object", "required": ["algorithm", "contentHash"], "properties": { "algorithm": { "const": "sha256" }, "contentHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }, "additionalProperties": false },
     "summary": { "type": "object", "required": ["findings", "actionableFindings", "suppressedFindings"], "properties": { "findings": { "type": "integer", "minimum": 0 }, "actionableFindings": { "type": "integer", "minimum": 0 }, "suppressedFindings": { "type": "integer", "minimum": 0 } }, "additionalProperties": true },
     "pages": { "type": "array" },
     "resources": { "type": "array" },

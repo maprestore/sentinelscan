@@ -41,6 +41,9 @@ test("dashboard exposes an asynchronous scan job with progress and a final repor
 
   const health = await waitForHealth(dashboardPort);
   assert.equal(health.version, "0.5.0");
+  const healthResponse = await fetch(`http://127.0.0.1:${dashboardPort}/api/health`);
+  assert.equal(healthResponse.headers.get("x-frame-options"), "DENY");
+  assert.match(healthResponse.headers.get("content-security-policy"), /frame-ancestors 'none'/);
   const { port } = fixture.address();
   const target = `http://127.0.0.1:${port}/`;
   const started = await fetch(`http://127.0.0.1:${dashboardPort}/api/scans`, {

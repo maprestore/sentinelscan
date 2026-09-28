@@ -1,6 +1,7 @@
 export type Severity = "info" | "low" | "medium" | "high";
 export type FindingStatus = "observed" | "candidate";
 export type TriageState = "open" | "suppressed";
+export type ValidationArtifact = "scope" | "config" | "suppressions" | "report" | "checkpoint";
 
 export interface Scope {
   name?: string;
@@ -73,10 +74,31 @@ export interface ExitPolicy {
   failOnSeverity: Severity | null;
   failOnBaseline: "never" | "new" | "changed" | "regressed";
   requireBaseline: boolean;
+  failOnIncomplete: boolean;
   failed: boolean;
   reasons: string[];
   matchedFindings: Array<Pick<Finding, "id" | "fingerprint" | "severity" | "location">>;
   baseline: { status: string; new: number; changed: number; resolved: number } | null;
+  coverage: { complete: boolean; termination: string };
+}
+
+export interface ReportIntegrity {
+  algorithm: "sha256";
+  contentHash: string;
+}
+
+export interface ScanIdentity {
+  algorithm: "sha256";
+  value: string;
+}
+
+export interface ScanCoverage {
+  complete: boolean;
+  termination: string;
+  pages: number;
+  resources: number;
+  requests: number;
+  deferred: number;
 }
 
 export interface Comparison {
@@ -99,6 +121,9 @@ export interface ScanReport {
   startedAt: string;
   finishedAt: string;
   limits: ScanLimits;
+  scanIdentity: ScanIdentity;
+  coverage: ScanCoverage;
+  integrity: ReportIntegrity;
   summary: Record<string, unknown> & { findings: number; actionableFindings: number; suppressedFindings: number };
   pages: unknown[];
   resources: unknown[];
@@ -141,6 +166,12 @@ export interface ScanOptions {
   onProgress?: (progress: ScanProgress) => void;
 }
 
+export interface ValidationResult {
+  kind: ValidationArtifact;
+  warnings?: string[];
+  [key: string]: unknown;
+}
+
 export declare const DEFAULTS: Readonly<ScanLimits>;
 export declare class ScanBudgetError extends Error { code: "SCAN_BUDGET_EXHAUSTED"; }
 export declare function scan(target: string, options: ScanOptions): Promise<ScanReport>;
@@ -175,5 +206,13 @@ export declare function applyTriage(findings: Finding[], suppressions?: Suppress
 export declare function actionableFindings(findings: Finding[]): Finding[];
 export declare function isSuppressed(finding: Finding): boolean;
 export declare function triageCounts(findings: Finding[]): { actionableFindings: number; suppressedFindings: number };
-export declare function normalizeExitPolicy(value?: Partial<Pick<ExitPolicy, "failOnSeverity" | "failOnBaseline" | "requireBaseline">>): Omit<ExitPolicy, "failed" | "reasons" | "matchedFindings" | "baseline">;
+export declare function normalizeExitPolicy(value?: Partial<Pick<ExitPolicy, "failOnSeverity" | "failOnBaseline" | "requireBaseline" | "failOnIncomplete">>): Omit<ExitPolicy, "failed" | "reasons" | "matchedFindings" | "baseline" | "coverage">;
 export declare function evaluateExitPolicy(report: ScanReport, policy?: Partial<ExitPolicy>): ExitPolicy;
+export declare function canonicalJson(value: unknown): string;
+export declare function sha256(value: unknown): string;
+export declare function addIntegrity<T extends Record<string, unknown>>(value: T, field?: string): T & { integrity: { algorithm: "sha256"; [key: string]: string } };
+export declare function verifyIntegrity(value: unknown, field?: string): boolean;
+export declare function buildScanIdentity(value: Record<string, unknown>): ScanIdentity;
+export declare class ValidationError extends Error { code: "INVALID_ARTIFACT"; path: string; }
+export declare function validateArtifact(kind: ValidationArtifact, value: unknown): ValidationResult;
+export declare function validateConfig(value: unknown): ValidationResult;

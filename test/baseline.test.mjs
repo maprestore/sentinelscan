@@ -67,3 +67,13 @@ test("a severity change on a shared fingerprint is still detected per instance",
   assert.equal(result.changedFindings[0].current.evidence, "cookie a");
   assert.equal(result.summary.status, "regressed");
 });
+
+test("coverage-limited comparisons are marked inconclusive", () => {
+  const baseline = { ...report(instance("cookie a")), scanIdentity: { algorithm: "sha256", value: "a" }, coverage: { complete: true, termination: "queue-exhausted", pages: 4, resources: 2, requests: 8 } };
+  const current = { ...report(instance("cookie a")), scanIdentity: { algorithm: "sha256", value: "a" }, coverage: { complete: false, termination: "Maximum request budget reached.", pages: 1, resources: 0, requests: 2 } };
+  const result = compareReports(current, baseline);
+  assert.equal(result.summary.status, "inconclusive");
+  assert.equal(result.summary.inconclusive, true);
+  assert.equal(result.summary.coverageShrunk, true);
+  assert.match(result.summary.inconclusiveReasons[0], /ended before queue exhaustion/i);
+});

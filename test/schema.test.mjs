@@ -18,6 +18,9 @@ test("all public JSON schemas are valid JSON with stable identifiers", async () 
 test("report schema requires triage-aware finding counts", async () => {
   const schema = JSON.parse(await readFile(new URL("schemas/report.schema.json", root), "utf8"));
   assert.deepEqual(schema.properties.summary.required, ["findings", "actionableFindings", "suppressedFindings"]);
+  assert.ok(schema.required.includes("scanIdentity"));
+  assert.ok(schema.required.includes("coverage"));
+  assert.ok(schema.required.includes("integrity"));
   assert.equal(schema.properties.schemaVersion.const, 2);
 });
 

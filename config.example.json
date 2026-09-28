@@ -15,7 +15,8 @@
   "exitPolicy": {
     "failOnSeverity": null,
     "failOnBaseline": "never",
-    "requireBaseline": false
+    "requireBaseline": false,
+    "failOnIncomplete": false
   },
   "emailDomain": "",
   "dkimSelectors": ["default", "google", "selector1", "selector2", "k1"]

@@ -13,6 +13,17 @@ function groupByFingerprint(report, predicate = () => true) {
   return groups;
 }
 
+function coverageOf(report) {
+  if (!report?.coverage && !report?.summary?.termination) return null;
+  return {
+    complete: report.coverage?.complete ?? report.summary?.termination === "queue-exhausted",
+    termination: report.coverage?.termination || report.summary?.termination || "unknown",
+    pages: report.coverage?.pages ?? report.summary?.pagesScanned ?? null,
+    resources: report.coverage?.resources ?? report.summary?.resourcesScanned ?? null,
+    requests: report.coverage?.requests ?? report.summary?.requestsMade ?? null,
+  };
+}
+
 /**
  * Compare two reports finding by finding.
  *
@@ -75,6 +86,15 @@ export function compareReports(current, baseline) {
     .filter(({ previous, current: item }) => previous.severity !== item.severity);
   const currentScore = Number(current.risk?.score || 0);
   const baselineScore = Number(baseline.risk?.score || 0);
+  const currentCoverage = coverageOf(current);
+  const baselineCoverage = coverageOf(baseline);
+  const coverageShrunk = Boolean(currentCoverage && baselineCoverage && ["pages", "resources", "requests"].some((field) => currentCoverage[field] !== null && baselineCoverage[field] !== null && currentCoverage[field] < baselineCoverage[field]));
+  const incomplete = currentCoverage?.complete === false;
+  const scanIdentityChanged = Boolean(current.scanIdentity?.value && baseline.scanIdentity?.value && current.scanIdentity.value !== baseline.scanIdentity.value);
+  const inconclusiveReasons = [
+    ...(incomplete ? [`Current scan ended before queue exhaustion: ${currentCoverage.termination.replace(/[.]$/, "")}.`] : []),
+    ...(coverageShrunk ? ["Current scan observed fewer pages, resources, or requests than the baseline."] : []),
+  ];
 
   return {
     baselineTarget: baseline.target,
@@ -93,10 +113,17 @@ export function compareReports(current, baseline) {
       riskDelta: currentScore - baselineScore,
       suppressed: suppressedFindings.length,
       baselineSuppressed: baselineSuppressed.length,
-      status: newFindings.length || changedFindings.some(({ current: item, previous }) => severityRank(item.severity) > severityRank(previous.severity))
-        ? "regressed"
-        : resolvedFindings.length || changedFindings.length ? "improved" : "unchanged",
+      status: inconclusiveReasons.length
+        ? "inconclusive"
+        : newFindings.length || changedFindings.some(({ current: item, previous }) => severityRank(item.severity) > severityRank(previous.severity))
+          ? "regressed"
+          : resolvedFindings.length || changedFindings.length ? "improved" : "unchanged",
+      inconclusive: inconclusiveReasons.length > 0,
+      inconclusiveReasons,
+      scanIdentityChanged,
+      coverageShrunk,
     },
+    coverage: { current: currentCoverage, baseline: baselineCoverage },
   };
 }
 

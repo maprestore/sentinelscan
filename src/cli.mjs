@@ -6,6 +6,8 @@ import { loadScope } from "./scope-file.mjs";
 import { toSarif } from "./sarif.mjs";
 import { toHtml } from "./html.mjs";
 import { evaluateExitPolicy, normalizeExitPolicy } from "./exit-policy.mjs";
+import { addIntegrity } from "./provenance.mjs";
+import { validateArtifact } from "./validation.mjs";
 
 function help() {
   return `SentinelScan 0.5.0
@@ -14,6 +16,7 @@ Safe, bounded security-posture checks for targets you own or are explicitly auth
 
 Usage:
   node src/cli.mjs --target https://example.com --scope scope.example.json --confirm-authorized
+  node src/cli.mjs validate report report.json
 
 Options:
   --target <url>             One http:// or https:// target URL
@@ -45,7 +48,12 @@ Options:
   --fail-on-severity <level> Exit 2 on actionable findings at or above info/low/medium/high
   --fail-on-baseline <mode>  Exit 2 on baseline new/changed/regressed findings
   --require-baseline         Exit 2 when --baseline is not supplied
+  --fail-on-incomplete        Exit 2 when the scan stops before its queue is exhausted
   --help                     Show this help
+
+Validation:
+  validate <scope|config|suppressions|report|checkpoint> <path> [--json]
+  Validate a local artifact without DNS, HTTP, browser, or third-party access.
 
 The scanner uses GET and HEAD requests only. It does not brute-force, exploit, bypass auth,
 submit forms, or follow links off the target origin.
@@ -59,7 +67,7 @@ function parseArgs(argv) {
     "max-elapsed-ms", "max-response-bytes", "delay-ms", "timeout-ms", "auth-headers", "auth-header-origins",
     "email-domain", "checkpoint", "resume", "baseline", "suppressions", "sarif-out", "fail-on-severity", "fail-on-baseline",
   ]);
-  const booleanFlags = new Set(["help", "confirm-authorized", "infrastructure", "certificate-transparency", "allow-private-network", "rendered", "confirm-rendered", "require-baseline"]);
+  const booleanFlags = new Set(["help", "confirm-authorized", "infrastructure", "certificate-transparency", "allow-private-network", "rendered", "confirm-rendered", "require-baseline", "fail-on-incomplete"]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (!arg.startsWith("--")) throw new Error(`Unknown argument: ${arg}`);
@@ -78,6 +86,41 @@ function parseArgs(argv) {
     if (inlineValue === undefined) index += 1;
   }
   return args;
+}
+
+function validationHelp() {
+  return `Usage: node src/cli.mjs validate <scope|config|suppressions|report|checkpoint> <path> [--json]\n\nValidates a local JSON artifact without making network requests.\n`;
+}
+
+async function runValidation(argv) {
+  if (argv.includes("--help") || argv.length === 0) {
+    process.stdout.write(validationHelp());
+    return;
+  }
+  const json = argv.includes("--json");
+  const positional = argv.filter((value) => value !== "--json");
+  if (positional.length !== 2 || positional.some((value) => value.startsWith("--"))) throw new Error("validate requires exactly one artifact type and one JSON path.");
+  const [kind, path] = positional;
+  let value;
+  try {
+    value = JSON.parse(await readFile(path, "utf8"));
+  } catch {
+    const result = { valid: false, type: kind, file: path, error: { code: "INVALID_JSON", path: "file", message: "Could not read valid JSON from the supplied path." } };
+    if (json) process.stdout.write(`${JSON.stringify(result)}\n`);
+    else process.stderr.write(`SentinelScan validate: ${result.error.message}\n`);
+    process.exitCode = 1;
+    return;
+  }
+  try {
+    const summary = validateArtifact(kind, value);
+    const result = { valid: true, type: kind, file: path, summary };
+    process.stdout.write(`${json ? JSON.stringify(result) : `Valid ${kind}: ${path}`}\n`);
+  } catch (error) {
+    const result = { valid: false, type: kind, file: path, error: { code: error.code || "INVALID_ARTIFACT", path: error.path || "artifact", message: error.message } };
+    if (json) process.stdout.write(`${JSON.stringify(result)}\n`);
+    else process.stderr.write(`SentinelScan validate: ${error.message}\n`);
+    process.exitCode = 1;
+  }
 }
 
 function asPositiveInteger(value, flag) {
@@ -104,6 +147,8 @@ function renderText(report) {
     `Pages scanned: ${terminalSafe(report.summary.pagesScanned)} | resources=${terminalSafe(report.summary.resourcesScanned)} | requests=${terminalSafe(report.summary.requestsMade)} | stop=${terminalSafe(report.summary.termination)}`,
     `Findings: ${terminalSafe(report.summary.findings)} | actionable=${terminalSafe(report.summary.actionableFindings ?? report.summary.findings)} | suppressed=${terminalSafe(report.summary.suppressedFindings ?? 0)}`,
     `Risk: ${terminalSafe(report.risk.score)}/100 (${terminalSafe(report.risk.grade)}) | attack paths=${terminalSafe(report.attackPaths.length)}`,
+    `Coverage: ${terminalSafe(report.coverage?.complete ? "complete" : "incomplete")} | identity=${terminalSafe(report.scanIdentity?.value || "-")}`,
+    `Integrity: ${terminalSafe(report.integrity?.contentHash || "-")}`,
     `Inventory: ${terminalSafe(report.inventory.totals.forms)} forms, ${terminalSafe(report.inventory.totals.scripts)} scripts, ${terminalSafe(report.inventory.totals.links)} links, ${terminalSafe(report.inventory.totals.clientApiEndpoints?.length || 0)} client API endpoints`,
     `Severity: ${terminalSafe(Object.entries(report.summary.bySeverity).map(([key, value]) => `${key}=${value}`).join(", ") || "none")}`,
     "",
@@ -139,7 +184,12 @@ async function writePrivateOutput(path, output) {
 }
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  if (argv[0] === "validate") {
+    await runValidation(argv.slice(1));
+    return;
+  }
+  const args = parseArgs(argv);
   if (args.help) {
     process.stdout.write(help());
     return;
@@ -181,7 +231,7 @@ async function main() {
     ...(args.checkpoint ? { checkpointPath: args.checkpoint } : {}),
     ...(resume ? { resume } : {}),
   };
-  const report = await scan(args.target, scanOptions);
+  let report = await scan(args.target, scanOptions);
   if (args.baseline) {
     const baseline = JSON.parse(await readFile(args.baseline, "utf8"));
     report.comparison = compareReports(report, baseline);
@@ -192,8 +242,9 @@ async function main() {
     ...(args["fail-on-severity"] === undefined ? {} : { failOnSeverity: args["fail-on-severity"] }),
     ...(args["fail-on-baseline"] === undefined ? {} : { failOnBaseline: args["fail-on-baseline"] }),
     ...(args["require-baseline"] ? { requireBaseline: true } : {}),
+    ...(args["fail-on-incomplete"] ? { failOnIncomplete: true } : {}),
   }));
-  report.exitPolicy = exitPolicy;
+  report = addIntegrity({ ...report, exitPolicy });
   const output = format === "json"
     ? JSON.stringify(report, null, 2)
     : format === "sarif"

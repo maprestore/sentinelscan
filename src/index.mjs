@@ -6,3 +6,5 @@ export { assertInScope, normalizeScope } from "./scope.mjs";
 export { DETECTOR_CATALOG, getDetector, validateDetectorCatalog } from "./detector-registry.mjs";
 export { evaluateExitPolicy, normalizeExitPolicy } from "./exit-policy.mjs";
 export { actionableFindings, applyTriage, isSuppressed, normalizeSuppressions, triageCounts } from "./triage.mjs";
+export { addIntegrity, buildScanIdentity, canonicalJson, sha256, verifyIntegrity } from "./provenance.mjs";
+export { ValidationError, validateArtifact, validateConfig } from "./validation.mjs";

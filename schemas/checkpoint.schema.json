@@ -17,7 +17,9 @@
     "queued": { "type": "array" },
     "deferred": { "type": "array" },
     "visited": { "type": "array", "items": { "type": "string" } },
-    "findings": { "type": "array", "items": { "$ref": "finding.schema.json" } }
+    "findings": { "type": "array", "items": { "$ref": "finding.schema.json" } },
+    "integrity": { "type": "object", "required": ["algorithm", "contentHash"], "properties": { "algorithm": { "const": "sha256" }, "contentHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }, "additionalProperties": false },
+    "report": { "$ref": "report.schema.json" }
   },
   "additionalProperties": true
 }

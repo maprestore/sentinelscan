@@ -128,6 +128,9 @@ Reports use `schemaVersion: 2`. Top-level keys:
 | `target`, `scope` | What was scanned and the scope that governed it |
 | `startedAt`, `finishedAt` | ISO timestamps |
 | `limits` | The effective budgets and auth-header **origins**. Header **values** are never included |
+| `scanIdentity` | SHA-256 identity for the scanner mode, effective limits, scope, detector catalog, and attack-path rules |
+| `coverage` | Whether the queue was exhausted, termination reason, and pages/resources/requests observed |
+| `integrity` | SHA-256 content hash over the report excluding its own integrity field. It is a content check, not a digital signature |
 | `summary` | Counts, elapsed time, `termination` reason, severity and confidence breakdowns, risk score and grade |
 | `pages`, `resources` | What was visited |
 | `requests` | Per-request timeline: URL (redacted), status, elapsed ms, bytes read, redirect target |
@@ -141,11 +144,11 @@ Reports use `schemaVersion: 2`. Top-level keys:
 | `comparison` | Added by the CLI when `--baseline` is used |
 | `exitPolicy` | The selected CI policy, matched findings, reasons, and failed state |
 
-`summary.termination` is `queue-exhausted` on a normal finish, or a human-readable reason such as "Maximum page budget reached." when a budget stopped the run early.
+`summary.termination` is `queue-exhausted` on a normal finish, or a human-readable reason such as "Maximum page budget reached." when a budget stopped the run early. Baseline comparisons become `inconclusive` when the current scan is incomplete or observes less coverage than its baseline. Use `--fail-on-incomplete` to make that condition fail CI.
 
 ## Checkpoints
 
-A checkpoint is a JSON file (`schemaVersion: 2`) holding the queue, deferred budget work, visited set, findings, inventory, and request log. It is written after each unit of work by writing a temporary file and renaming it, so an interruption can never leave a half-written checkpoint. Budget-stopped runs remain `in-progress` and can resume after the relevant limit is increased; normally exhausted runs are `complete`.
+A checkpoint is a JSON file (`schemaVersion: 2`) holding the queue, deferred budget work, visited set, findings, inventory, request log, and a SHA-256 integrity hash. It is written after each unit of work by writing a temporary file and renaming it, so an interruption can never leave a half-written checkpoint. Budget-stopped runs remain `in-progress` and can resume after the relevant limit is increased; normally exhausted runs are `complete`.
 
 On resume, SentinelScan refuses to continue if the target or the scope differs from the checkpoint. When a checkpoint of a *completed* scan is passed to the CLI, it returns the stored report without contacting the target again.
 
