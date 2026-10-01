@@ -25,7 +25,7 @@ flowchart LR
     B -->|yes| G[GET once]
     G --> R{Redirect?}
     R -->|yes, hop under 5| S
-    R -->|no| D[Read up to 1 MB]
+    R -->|no| D[Read up to the configured response cap]
     N -.->|rejected| X[Blocked]
     S -.->|rejected| X
     B -.->|exhausted| X
@@ -47,7 +47,7 @@ flowchart LR
 | 12 | **The dashboard is local.** It binds to `127.0.0.1` by default, rejects cross-origin mutation requests, runs one job at a time, caps request bodies at 16 KB, and clamps every budget to a hard maximum. | `src/server.mjs` |
 | 13 | **Private networks are fail-closed.** DNS answers and literal addresses in loopback, private, reserved, documentation, multicast, and link-local ranges are blocked unless `allowPrivateNetwork` is explicitly enabled. Requests are pinned to the checked address. | `src/network-policy.mjs` |
 | 14 | **Rendered mode has a separate boundary.** JavaScript executes only after `rendered` and `confirmRendered` are both enabled. The browser context is ephemeral, service workers and downloads are blocked, and every request is scope-checked. | `src/browser-renderer.mjs` |
-| 15 | **Dashboard state is bounded and auditable.** Rate limits are per client and action; optional persistence stores redacted job state only, marks interrupted jobs after restart, and writes allow-listed audit fields. | `src/rate-limit.mjs`, `src/dashboard-store.mjs`, `src/audit.mjs` |
+| 15 | **Dashboard state is bounded and auditable.** Rate limits are per client and action; optional persistence stores retained job state, marks interrupted jobs after restart, and keeps a private rolling audit log capped at 5 MB. | `src/rate-limit.mjs`, `src/dashboard-store.mjs`, `src/audit.mjs` |
 
 ### Auth header hardening
 
@@ -106,11 +106,11 @@ Two features go beyond `GET` requests to your target. **Both are opt-in** and di
 
 | Feature | Enabled by | What happens |
 | --- | --- | --- |
-| **Infrastructure checks** | `--infrastructure` | DNS lookups for the target and email domain (SPF, DMARC, DKIM selectors, CAA) through your resolver, plus, for HTTPS targets, a single TLS handshake to the target host (port from the URL, or 443) to read the certificate. The handshake is closed immediately; no HTTP is sent. |
+| **Infrastructure checks** | `--infrastructure` | DNS lookups for the target hostname and optional in-scope email domain (SPF, DMARC, DKIM selectors; CAA applies to the target hostname), plus, for HTTPS targets, one TLS handshake to the target host (port from the URL, or 443) to read the certificate. The handshake is closed immediately; no HTTP is sent. |
 | **Certificate Transparency** | `--certificate-transparency` | The target **hostname** is looked up on the public **crt.sh** service. This is a third-party request. |
 
 > [!WARNING]
-> `--email-domain` may name a domain other than the target. DNS lookups for it are not restricted by your origin scope, so keep it inside your written assessment scope.
+> `--email-domain` may name a domain other than the target. When infrastructure checks are enabled, that hostname must match an exact or wildcard origin in the written scope; the scanner rejects an out-of-scope email domain before making DNS queries.
 
 ## Verify it yourself
 

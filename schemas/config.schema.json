@@ -19,19 +19,32 @@
     "confirmRendered": { "type": "boolean" },
     "emailDomain": { "type": "string" },
     "dkimSelectors": { "type": "array", "maxItems": 20, "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,63}$" } },
-    "authHeaders": { "type": "object", "additionalProperties": { "type": "string" } },
-    "authHeaderOrigins": { "type": "array", "items": { "type": "string" } },
+    "authHeaders": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$",
+        "not": { "pattern": "^(?:[Hh][Oo][Ss][Tt]|[Cc][Oo][Nn][Nn][Ee][Cc][Tt][Ii][Oo][Nn]|[Cc][Oo][Nn][Tt][Ee][Nn][Tt]-[Ll][Ee][Nn][Gg][Tt][Hh]|[Tt][Rr][Aa][Nn][Ss][Ff][Ee][Rr]-[Ee][Nn][Cc][Oo][Dd][Ii][Nn][Gg])$" }
+      },
+      "additionalProperties": { "type": "string", "maxLength": 4096, "pattern": "^[^\\r\\n]*$" }
+    },
+    "authHeaderOrigins": { "type": "array", "minItems": 1, "items": { "type": "string" } },
     "suppressions": { "$ref": "suppressions.schema.json" },
     "exitPolicy": {
       "type": "object",
       "properties": {
-        "failOnSeverity": { "type": ["string", "null"], "enum": ["info", "low", "medium", "high", null] },
-        "failOnBaseline": { "enum": ["never", "new", "changed", "regressed"] },
+        "failOnSeverity": { "type": ["string", "null"], "enum": ["info", "low", "medium", "high", "", null] },
+        "failOnBaseline": { "enum": ["never", "new", "changed", "regressed", ""] },
         "requireBaseline": { "type": "boolean" },
         "failOnIncomplete": { "type": "boolean" }
       },
       "additionalProperties": false
     }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "rendered": { "const": true } }, "required": ["rendered"] },
+      "then": { "properties": { "confirmRendered": { "const": true } }, "required": ["confirmRendered"] }
+    }
+  ],
   "additionalProperties": false
 }

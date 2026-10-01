@@ -6,7 +6,7 @@ import { isIP } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { normalizeAuthHeaderOrigins, normalizeAuthHeaders, normalizeEmailDomain, normalizeTarget, scan } from "./scanner.mjs";
-import { assertInScope, normalizeScope } from "./scope.mjs";
+import { assertInScope, assertOriginInScope, normalizeScope } from "./scope.mjs";
 import { normalizeSuppressions } from "./triage.mjs";
 import { DashboardStore } from "./dashboard-store.mjs";
 import { RateLimiter } from "./rate-limit.mjs";
@@ -177,6 +177,17 @@ function buildValidatedScanOptions(body, signal, onProgress) {
   if (body.rendered === true && body.confirmRendered !== true) throw new Error("Rendered mode requires confirmRendered: true because target JavaScript will execute.");
   const authHeaderOrigins = body.authHeaderOrigins === undefined ? undefined : normalizeAuthHeaderOrigins(body.authHeaderOrigins, target.origin);
   const emailDomain = normalizeEmailDomain(body.emailDomain);
+  if ((body.checkInfrastructure === true || body.certificateTransparency === true) && emailDomain && emailDomain !== target.hostname) {
+    const inScope = ["https:", "http:"].some((protocol) => {
+      try {
+        assertOriginInScope(`${protocol}//${emailDomain}/`, scope);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    if (!inScope) throw new Error("emailDomain must be included in the explicit scan scope before infrastructure DNS checks are enabled.");
+  }
   const suppressions = normalizeSuppressions(body.suppressions);
   return {
     target: target.href,

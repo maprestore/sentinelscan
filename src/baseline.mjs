@@ -76,8 +76,8 @@ export function compareReports(current, baseline) {
     }
   }
 
-  const newFindings = current.findings.filter((item) => !previousFor.has(item));
-  const unchangedFindings = current.findings.filter((item) => previousFor.has(item));
+  const newFindings = current.findings.filter((item) => !isSuppressed(item) && !previousFor.has(item));
+  const unchangedFindings = current.findings.filter((item) => !isSuppressed(item) && previousFor.has(item));
   const resolvedFindings = baseline.findings.filter((item) => !isSuppressed(item) && !matchedBaseline.has(item) && !currentSuppressed.some((suppressed) => fingerprintOf(suppressed) === fingerprintOf(item)));
   const suppressedFindings = currentSuppressed;
   const suppressedInsteadOfResolved = baseline.findings.filter((item) => !isSuppressed(item) && !matchedBaseline.has(item) && currentSuppressed.some((suppressed) => fingerprintOf(suppressed) === fingerprintOf(item)));

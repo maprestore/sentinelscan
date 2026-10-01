@@ -1,4 +1,4 @@
-import { lookup } from "node:dns/promises";
+import { lookup, Resolver } from "node:dns/promises";
 import { isIP } from "node:net";
 import { Readable } from "node:stream";
 import http from "node:http";
@@ -73,6 +73,10 @@ function isNonPublicIpv4(address) {
     ["192.0.0.0", 24],
     ["192.0.2.0", 24],
     ["192.168.0.0", 16],
+    ["192.31.196.0", 24],
+    ["192.52.193.0", 24],
+    ["192.88.99.0", 24],
+    ["192.175.48.0", 24],
     ["198.18.0.0", 15],
     ["198.51.100.0", 24],
     ["203.0.113.0", 24],
@@ -82,6 +86,18 @@ function isNonPublicIpv4(address) {
 }
 
 function isNonPublicIpv6(address) {
+  const value = parseIpv6(address);
+  if (value === null) return true;
+  if ((value >> 32n) === 0xffffn) {
+    const mapped = Number(value & 0xffffffffn);
+    const ipv4 = `${mapped >>> 24}.${(mapped >>> 16) & 255}.${(mapped >>> 8) & 255}.${mapped & 255}`;
+    return isNonPublicIpv4(ipv4);
+  }
+  if (ipv6InRange(address, "2002::", 16)) {
+    const embedded = Number((value >> 80n) & 0xffffffffn);
+    const ipv4 = `${embedded >>> 24}.${(embedded >>> 16) & 255}.${(embedded >>> 8) & 255}.${embedded & 255}`;
+    if (isNonPublicIpv4(ipv4)) return true;
+  }
   if ([
     ["::", 128],
     ["::1", 128],
@@ -90,19 +106,12 @@ function isNonPublicIpv6(address) {
     ["fec0::", 10],
     ["ff00::", 8],
     ["2001:db8::", 32],
+    ["2001::", 23],
     ["2001:10::", 28],
     ["2001:2::", 48],
     ["2001:20::", 28],
   ].some(([network, prefix]) => ipv6InRange(address, network, prefix))) return true;
-
-  const value = parseIpv6(address);
-  if (value === null) return true;
-  if ((value >> 32n) === 0xffffn) {
-    const mapped = Number(value & 0xffffffffn);
-    const ipv4 = `${mapped >>> 24}.${(mapped >>> 16) & 255}.${(mapped >>> 8) & 255}.${mapped & 255}`;
-    return isNonPublicIpv4(ipv4);
-  }
-  return false;
+  return !ipv6InRange(address, "2000::", 3);
 }
 
 export function isPrivateAddress(address) {
@@ -120,32 +129,80 @@ function abortError(signal) {
   return signal?.reason || new DOMException("The request was canceled.", "AbortError");
 }
 
-async function resolveAll(hostname, signal, timeoutMs) {
-  const operation = isIP(hostname)
-    ? Promise.resolve([{ address: hostname, family: isIP(hostname) }])
-    : lookup(hostname, { all: true, verbatim: true });
-  if (!signal && !(timeoutMs > 0)) return operation;
+async function resolveAll(hostname, signal, timeoutMs, allowPrivateNetwork) {
+  const family = isIP(hostname);
+  if (family) return [{ address: hostname, family }];
+  if (allowPrivateNetwork && /^(?:localhost|.+\.localhost)$/i.test(hostname)) {
+    const operation = lookup(hostname, { all: true, verbatim: true });
+    if (!signal && !(timeoutMs > 0)) return operation;
+    let timer;
+    let onAbort;
+    try {
+      const waits = [operation];
+      if (signal) waits.push(new Promise((_, reject) => {
+        onAbort = () => reject(abortError(signal));
+        if (signal.aborted) reject(abortError(signal));
+        else signal.addEventListener("abort", onAbort, { once: true });
+      }));
+      if (timeoutMs > 0) waits.push(new Promise((_, reject) => { timer = setTimeout(() => reject(new DOMException("DNS resolution timed out.", "TimeoutError")), timeoutMs); }));
+      return await Promise.race(waits);
+    } finally {
+      clearTimeout(timer);
+      if (onAbort) signal.removeEventListener("abort", onAbort);
+    }
+  }
+
+  if (signal?.aborted) throw abortError(signal);
+  const resolver = new Resolver();
   let timer;
   let onAbort;
   try {
+    const operation = Promise.allSettled([resolver.resolve4(hostname), resolver.resolve6(hostname)]).then((results) => {
+      const addresses = [];
+      const errors = [];
+      for (let index = 0; index < results.length; index += 1) {
+        const result = results[index];
+        if (result.status === "fulfilled") {
+          const version = index === 0 ? 4 : 6;
+          for (const address of result.value) addresses.push({ address, family: version });
+        } else if (!result.reason || !["ENODATA", "ENOTFOUND"].includes(result.reason.code)) {
+          errors.push(result.reason);
+        }
+      }
+      if (addresses.length) return addresses;
+      if (errors.length) throw errors[0];
+      const error = new Error(`No DNS addresses were found for ${hostname}.`);
+      error.code = "ENODATA";
+      throw error;
+    });
     const waits = [operation];
     if (signal) waits.push(new Promise((_, reject) => {
-      onAbort = () => reject(abortError(signal));
-      if (signal.aborted) reject(abortError(signal));
+      onAbort = () => {
+        resolver.cancel();
+        reject(abortError(signal));
+      };
+      if (signal.aborted) onAbort();
       else signal.addEventListener("abort", onAbort, { once: true });
     }));
-    if (timeoutMs > 0) waits.push(new Promise((_, reject) => { timer = setTimeout(() => reject(new DOMException("DNS resolution timed out.", "TimeoutError")), timeoutMs); }));
+    if (timeoutMs > 0) waits.push(new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        resolver.cancel();
+        reject(new DOMException("DNS resolution timed out.", "TimeoutError"));
+      }, timeoutMs);
+    }));
     return await Promise.race(waits);
   } finally {
     clearTimeout(timer);
     if (onAbort) signal.removeEventListener("abort", onAbort);
+    resolver.cancel();
   }
 }
 
 export async function resolveAllowedAddresses(hostname, { allowPrivateNetwork = false, signal, timeoutMs } = {}) {
   const normalized = String(hostname).replace(/^\[|\]$/g, "").toLowerCase();
   if (!allowPrivateNetwork && isPrivateHostname(normalized)) throw new NetworkPolicyError(`Private or reserved hostname blocked by network policy: ${hostname}`);
-  const addresses = await resolveAll(normalized, signal, timeoutMs);
+  const dnsTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 8_000;
+  const addresses = await resolveAll(normalized, signal, dnsTimeoutMs, allowPrivateNetwork);
   if (!addresses.length) throw new NetworkPolicyError(`No address was returned for ${hostname}.`);
   if (!allowPrivateNetwork && addresses.some((entry) => isPrivateAddress(entry.address))) {
     throw new NetworkPolicyError(`Private or non-public address resolution blocked for ${hostname}.`);
@@ -174,13 +231,12 @@ function containsCredentialShapedUrlData(url) {
   if (url.username || url.password) return true;
   const sensitiveKey = /^(?:authorization|api[_-]?key|client[_-]?secret|password|passwd|secret|session|signature|sig|token|access[_-]?token|refresh[_-]?token)$/i;
   const sensitiveAssignment = /\b(?:authorization|api[_-]?key|client[_-]?secret|password|passwd|secret|session|signature|sig|token|access[_-]?token|refresh[_-]?token)\b\s*[=:]\s*[^&\s,;]+/i;
+  if (/%(?![0-9a-f]{2})/i.test(url.search)) throw new NetworkPolicyError("Malformed encoded URL data is blocked by the network policy.");
   for (const [key, value] of url.searchParams) {
-    let decoded;
+    let decoded = value.replace(/%(?![0-9a-f]{2})/gi, "");
     try {
-      decoded = decodeURIComponent(value);
-    } catch {
-      throw new NetworkPolicyError("Malformed encoded URL data is blocked by the network policy.");
-    }
+      decoded = decodeURIComponent(decoded);
+    } catch {}
     if (sensitiveKey.test(key) || sensitiveAssignment.test(decoded) || /(?:[?&]|^)\w*(?:token|secret|password|api[_-]?key)\s*=/i.test(decoded)) return true;
   }
   return false;
@@ -194,7 +250,7 @@ function requestOnce(url, address, options) {
   const transport = url.protocol === "https:" ? https : http;
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
   const headers = { ...(options.headers || {}) };
-  if (!Object.keys(headers).some((name) => name.toLowerCase() === "accept-encoding")) headers["accept-encoding"] = "identity";
+  headers["accept-encoding"] = "identity";
   const bodyless = new Set([204, 205, 304]);
 
   return new Promise((resolve, reject) => {

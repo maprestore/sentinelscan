@@ -110,7 +110,7 @@ Cancellation is cooperative: the running request is aborted and no further reque
 | `timeoutMs` | integer | 8000 | Clamped to 1,000 to 8,000 |
 | `checkInfrastructure` | boolean | `false` | Opt-in DNS/TLS/email checks |
 | `certificateTransparency` | boolean | `false` | Opt-in. Queries crt.sh |
-| `emailDomain` | string | target hostname | For email-policy lookups |
+| `emailDomain` | string | target hostname | For email-policy lookups; if infrastructure checks are enabled, a different hostname must be included in `scope.allowedOrigins` |
 | `authHeaders` | object | none | Operator-supplied test-session headers |
 | `authHeaderOrigins` | string[] | `[target origin]` | Exact origins that may receive `authHeaders` |
 | `allowPrivateNetwork` | boolean | `false` | Must be explicitly true for loopback, private, reserved, or non-public DNS targets |
@@ -124,7 +124,7 @@ Out-of-range numbers are clamped, not rejected. The request body itself is limit
 
 - **One scan at a time.** Starting a second while one is queued or running returns `409`.
 - **Rate limits.** Scan creation, synchronous scans, polling, and cancellation have separate per-client in-memory limits. A rejected request returns `429` with `Retry-After`.
-- **Persistence is opt-in.** Set `SENTINEL_DASHBOARD_DATA_DIR` to atomically persist redacted job state and an append-only operational audit log. Queued/running jobs become `interrupted` after restart and are never resumed automatically.
+- **Persistence is opt-in.** Set `SENTINEL_DASHBOARD_DATA_DIR` to atomically persist redacted job state and a private, rolling audit log capped at 5 MB. Queued/running jobs become `interrupted` after restart and are never resumed automatically.
 - Errors are JSON: `{ "error": "..." }`.
 
 | Status | When | Example `error` |

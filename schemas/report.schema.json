@@ -3,19 +3,54 @@
   "$id": "https://sentinelscan.example/schemas/report.schema.json",
   "title": "SentinelScan report",
   "type": "object",
-  "required": ["schemaVersion", "scanner", "target", "scope", "startedAt", "finishedAt", "limits", "scanIdentity", "coverage", "integrity", "summary", "findings", "attackPaths", "risk"],
+  "required": ["schemaVersion", "scanner", "target", "scope", "startedAt", "finishedAt", "limits", "scanIdentity", "coverage", "integrity", "summary", "pages", "resources", "requests", "infrastructure", "inventory", "findings", "suppressions", "attackPaths", "risk", "notes"],
   "properties": {
     "schemaVersion": { "const": 2 },
     "scanner": { "type": "object", "required": ["name", "version", "mode"], "properties": { "name": { "type": "string" }, "version": { "type": "string" }, "mode": { "enum": ["bounded-passive", "bounded-rendered"] } }, "additionalProperties": true },
-    "target": { "type": "string", "format": "uri" },
+    "target": { "type": "string", "format": "uri", "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://" },
     "scope": { "$ref": "scope.schema.json" },
     "startedAt": { "type": "string", "format": "date-time" },
     "finishedAt": { "type": "string", "format": "date-time" },
-    "limits": { "type": "object" },
+    "limits": {
+      "type": "object",
+      "required": ["maxPages", "maxRedirects", "maxResponseBytes", "timeoutMs", "delayMs", "maxResources", "maxRequests", "maxElapsedMs", "checkInfrastructure", "certificateTransparency", "allowPrivateNetwork", "rendered", "authHeaderOrigins"],
+      "properties": {
+        "maxPages": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "maxRedirects": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "maxResponseBytes": { "type": "integer", "minimum": 1, "maximum": 10000000 },
+        "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 60000 },
+        "delayMs": { "type": "integer", "minimum": 0, "maximum": 60000 },
+        "maxResources": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "maxRequests": { "type": "integer", "minimum": 1, "maximum": 5000 },
+        "maxElapsedMs": { "type": "integer", "minimum": 1, "maximum": 900000 },
+        "checkInfrastructure": { "type": "boolean" },
+        "certificateTransparency": { "type": "boolean" },
+        "allowPrivateNetwork": { "type": "boolean" },
+        "rendered": { "type": "boolean" },
+        "emailDomain": { "type": "string" },
+        "dkimSelectors": { "type": "array", "maxItems": 20, "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,63}$" } },
+        "authHeaderOrigins": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
     "scanIdentity": { "type": "object", "required": ["algorithm", "value"], "properties": { "algorithm": { "const": "sha256" }, "value": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }, "additionalProperties": false },
     "coverage": { "type": "object", "required": ["complete", "termination", "pages", "resources", "requests", "deferred"], "properties": { "complete": { "type": "boolean" }, "termination": { "type": "string" }, "pages": { "type": "integer", "minimum": 0 }, "resources": { "type": "integer", "minimum": 0 }, "requests": { "type": "integer", "minimum": 0 }, "deferred": { "type": "integer", "minimum": 0 } }, "additionalProperties": false },
     "integrity": { "type": "object", "required": ["algorithm", "contentHash"], "properties": { "algorithm": { "const": "sha256" }, "contentHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }, "additionalProperties": false },
-    "summary": { "type": "object", "required": ["findings", "actionableFindings", "suppressedFindings"], "properties": { "findings": { "type": "integer", "minimum": 0 }, "actionableFindings": { "type": "integer", "minimum": 0 }, "suppressedFindings": { "type": "integer", "minimum": 0 } }, "additionalProperties": true },
+    "summary": {
+      "type": "object",
+      "required": ["pagesScanned", "resourcesScanned", "requestsMade", "elapsedMs", "termination", "findings", "actionableFindings", "suppressedFindings"],
+      "properties": {
+        "pagesScanned": { "type": "integer", "minimum": 0 },
+        "resourcesScanned": { "type": "integer", "minimum": 0 },
+        "requestsMade": { "type": "integer", "minimum": 0 },
+        "elapsedMs": { "type": "integer", "minimum": 0 },
+        "termination": { "type": "string" },
+        "findings": { "type": "integer", "minimum": 0 },
+        "actionableFindings": { "type": "integer", "minimum": 0 },
+        "suppressedFindings": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
     "pages": { "type": "array" },
     "resources": { "type": "array" },
     "requests": { "type": "array" },
@@ -23,8 +58,33 @@
     "inventory": { "type": "object" },
     "findings": { "type": "array", "items": { "$ref": "finding.schema.json" } },
     "suppressions": { "$ref": "suppressions.schema.json" },
-    "attackPaths": { "type": "array" },
-    "risk": { "type": "object" },
+    "attackPaths": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "severity", "title", "whyItMatters", "nextAction", "findingFingerprints"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "severity": { "enum": ["info", "low", "medium", "high"] },
+          "title": { "type": "string", "minLength": 1 },
+          "whyItMatters": { "type": "string", "minLength": 1 },
+          "nextAction": { "type": "string", "minLength": 1 },
+          "findingFingerprints": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "required": ["score", "grade", "method", "contributions", "priority"],
+      "properties": {
+        "score": { "type": "number", "minimum": 0, "maximum": 100 },
+        "grade": { "enum": ["A", "B", "C", "D", "F"] },
+        "method": { "type": "string", "minLength": 1 },
+        "contributions": { "type": "array" },
+        "priority": { "type": "array" }
+      },
+      "additionalProperties": true
+    },
     "comparison": { "type": "object" },
     "exitPolicy": { "type": "object" },
     "notes": { "type": "array", "items": { "type": "string" } }

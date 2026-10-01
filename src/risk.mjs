@@ -1,47 +1,47 @@
 const SEVERITY_WEIGHT = { info: 0, low: 6, medium: 18, high: 35 };
 
-export const DEFAULT_ATTACK_PATH_RULES = [
-  {
+export const DEFAULT_ATTACK_PATH_RULES = Object.freeze([
+  Object.freeze({
     id: "credential-interception-path",
-    requiresAll: ["site-served-over-http", "credential-form-over-http"],
+    requiresAll: Object.freeze(["site-served-over-http", "credential-form-over-http"]),
     severity: "high",
     title: "Credentials can travel through an unencrypted path",
     whyItMatters: "The site is served over HTTP and a password form submits over HTTP.",
     nextAction: "Move the entire sign-in flow to HTTPS, redirect HTTP before rendering the form, and then confirm the session cookie policy.",
-  },
-  {
+  }),
+  Object.freeze({
     id: "source-control-exposure-path",
-    requiresAll: ["exposed-git-metadata"],
+    requiresAll: Object.freeze(["exposed-git-metadata"]),
     severity: "high",
     title: "Public source-control metadata may reveal implementation details",
     whyItMatters: "The public Git metadata endpoint returned a repository reference.",
     nextAction: "Remove repository metadata from the web root and rotate any credentials that may have entered repository history.",
-  },
-  {
+  }),
+  Object.freeze({
     id: "browser-supply-chain-path",
-    requiresAll: ["external-script-without-sri", "missing-content-security-policy"],
+    requiresAll: Object.freeze(["external-script-without-sri", "missing-content-security-policy"]),
     severity: "medium",
     title: "Browser supply-chain controls are weak",
     whyItMatters: "An external script is loaded without integrity metadata and no CSP was observed.",
     nextAction: "Pin trusted third-party assets, add SRI where feasible, and deploy a tested CSP.",
-  },
-  {
+  }),
+  Object.freeze({
     id: "session-ui-defense-path",
-    requiresAll: ["missing-clickjacking-protection", "cookie-missing-samesite"],
+    requiresAll: Object.freeze(["missing-clickjacking-protection", "cookie-missing-samesite"]),
     severity: "medium",
     title: "Session-facing browser defenses are incomplete",
     whyItMatters: "The site lacks clickjacking protection and at least one cookie has no explicit SameSite policy.",
     nextAction: "Set a deliberate frame policy and explicit SameSite behavior, then verify embedded and cross-site flows.",
-  },
-  {
+  }),
+  Object.freeze({
     id: "client-secret-exposure-path",
-    requiresAll: ["potential-client-secret", "client-api-endpoint"],
+    requiresAll: Object.freeze(["potential-client-secret", "client-api-endpoint"]),
     severity: "high",
     title: "A client-side secret may expose an API trust boundary",
     whyItMatters: "A high-confidence secret-like value was found near a client-visible API endpoint.",
     nextAction: "Revoke the exposed credential, move privileged access server-side, and review API authorization boundaries.",
-  },
-];
+  }),
+]);
 
 function path(id, severity, title, whyItMatters, nextAction, items) {
   return {

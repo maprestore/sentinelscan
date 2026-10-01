@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { Resolver } from "node:dns/promises";
 import http from "node:http";
 import { fetchWithNetworkPolicy, isPrivateAddress, resolveAllowedAddresses, NetworkPolicyError } from "../src/network-policy.mjs";
 
@@ -54,6 +55,29 @@ test("bodyless responses and duplicate cookies are represented safely", async (t
   }
 });
 
+test("encoded percent query values are allowed while malformed and credential data stay blocked", async (t) => {
+  let receivedUrl = "";
+  const server = await startServer((request, response) => {
+    receivedUrl = request.url;
+    response.end("ok");
+  });
+  t.after(() => server.close());
+  const endpoint = new URL(`http://127.0.0.1:${server.address().port}/lookup`);
+  endpoint.searchParams.set("q", "%.example.test");
+  const response = await fetchWithNetworkPolicy(endpoint, { allowPrivateNetwork: true });
+  assert.equal(await response.text(), "ok");
+  assert.equal(new URL(receivedUrl, endpoint).searchParams.get("q"), "%.example.test");
+
+  await assert.rejects(
+    () => fetchWithNetworkPolicy(`http://127.0.0.1:${server.address().port}/?q=%ZZ`, { allowPrivateNetwork: true }),
+    /Malformed encoded URL data/,
+  );
+  await assert.rejects(
+    () => fetchWithNetworkPolicy(`http://127.0.0.1:${server.address().port}/?q=%2574oken%253Dsecret`, { allowPrivateNetwork: true }),
+    /Credential-shaped URL data/,
+  );
+});
+
 test("IPv6 literal requests use an unbracketed transport host when available", async (t) => {
   let server;
   try {
@@ -75,4 +99,25 @@ test("DNS resolution honors an already-aborted signal", async () => {
     () => resolveAllowedAddresses("example.com", { signal: controller.signal, timeoutMs: 100 }),
     (error) => error.name === "AbortError",
   );
+});
+
+test("DNS resolution cancels outstanding resolver requests at its timeout", async () => {
+  const originalResolve4 = Resolver.prototype.resolve4;
+  const originalResolve6 = Resolver.prototype.resolve6;
+  const originalCancel = Resolver.prototype.cancel;
+  let canceled = false;
+  Resolver.prototype.resolve4 = () => new Promise(() => {});
+  Resolver.prototype.resolve6 = () => new Promise(() => {});
+  Resolver.prototype.cancel = function cancel() { canceled = true; };
+  try {
+    await assert.rejects(
+      () => resolveAllowedAddresses("example.com", { timeoutMs: 10 }),
+      (error) => error.name === "TimeoutError",
+    );
+    assert.equal(canceled, true);
+  } finally {
+    Resolver.prototype.resolve4 = originalResolve4;
+    Resolver.prototype.resolve6 = originalResolve6;
+    Resolver.prototype.cancel = originalCancel;
+  }
 });

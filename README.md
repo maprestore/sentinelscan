@@ -21,7 +21,7 @@
 
 <br>
 
- | **49** | **5** | **4** | **0** | **68** |
+ | **49** | **5** | **4** | **0** | **84** |
 | :---: | :---: | :---: | :---: | :---: |
 | finding types | attack-path rules | report formats | runtime dependencies | offline tests |
 
@@ -47,12 +47,12 @@ It is deliberately **not** an exploit framework. It never submits a form, guesse
 
 | | Exploit-style scanners | **SentinelScan** |
 | --- | --- | --- |
-| **Requests** | Whatever finds a bug: `POST`, payloads, fuzzing | **`GET` only.** No form is ever submitted |
+| **Requests** | Whatever finds a bug: `POST`, payloads, fuzzing | **`GET`/`HEAD` only.** No form is ever submitted |
 | **Scope** | A URL and good intentions | **A written scope file is mandatory.** Every request *and every redirect hop* is checked first |
-| **Blast radius** | Crawl until done | **Hard budgets:** 80 requests, 120 s, 1 MB per response, 5 redirects (all adjustable) |
+| **Blast radius** | Crawl until done | **Default budgets:** 80 requests, 120 s, 1 MB per response, 5 redirects; enforced ceilings keep scans bounded |
 | **Results** | Hundreds of unranked alerts | **Confidence-aware findings**, diminishing returns on repeats, and correlated attack paths |
 | **Explainability** | "Risk: High" | **A score you can audit,** down to the points each finding contributed |
-| **Footprint** | A heavyweight stack | **`node src/cli.mjs`.** Zero runtime dependencies, about 2,600 lines of readable source |
+| **Footprint** | A heavyweight stack | **`node src/cli.mjs`.** Zero runtime dependencies, about 4,300 lines of readable source |
 
 ## ⚡ Quick start in 60 seconds
 
@@ -465,7 +465,7 @@ A security tool should be easy to audit. The passive scanner is plain Node.js (`
 ## 🧪 Development
 
 ```bash
-npm test          # 68 fixture-based tests; no internet required
+npm test          # 84 fixture-based tests; no internet required
 ```
 
 The tests use local fixture servers and never contact the public internet. To add a detector, see [CONTRIBUTING.md](CONTRIBUTING.md).

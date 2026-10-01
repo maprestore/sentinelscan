@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { chmod, readFile, rename, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { scan } from "./scanner.mjs";
 import { compareReports } from "./baseline.mjs";
 import { loadScope } from "./scope-file.mjs";
@@ -7,7 +7,8 @@ import { toSarif } from "./sarif.mjs";
 import { toHtml } from "./html.mjs";
 import { evaluateExitPolicy, normalizeExitPolicy } from "./exit-policy.mjs";
 import { addIntegrity } from "./provenance.mjs";
-import { validateArtifact } from "./validation.mjs";
+import { validateArtifact, validateConfig } from "./validation.mjs";
+import { writePrivateFileAtomic } from "./private-file.mjs";
 
 function help() {
   return `SentinelScan 0.5.0
@@ -25,13 +26,13 @@ Options:
   --format <text|json|sarif|html> Output format (default: text)
   --out <path>               Also write the report to a local file
   --config <path>             Load scan defaults from a JSON file
-  --max-pages <number>       Same-origin HTML pages to visit (default: 20)
-  --max-resources <number>   Same-scope JS/JSON resources to inspect (default: 40)
-  --max-requests <number>    Hard cap across page, resource, redirect, and metadata requests (default: 80)
-  --max-elapsed-ms <number>  Hard wall-clock cap for one scan (default: 120000)
-  --max-response-bytes <n>   Maximum bytes read from one response
-  --delay-ms <number>        Delay between requests (default: 250)
-  --timeout-ms <number>      Per-request timeout (default: 8000)
+  --max-pages <number>       In-scope HTML pages to visit (default: 20, max: 500)
+  --max-resources <number>   In-scope JS/JSON resources (default: 40, max: 1000)
+  --max-requests <number>    Hard cap across all requests (default: 80, max: 5000)
+  --max-elapsed-ms <number>  Wall-clock cap (default: 120000, max: 900000)
+  --max-response-bytes <n>   Per-response byte cap (default: 1000000, max: 10000000)
+  --delay-ms <number>        Delay between requests (default: 250, max: 60000)
+  --timeout-ms <number>      Per-request timeout (default: 8000, max: 60000)
   --auth-headers <path>      JSON object of user-supplied session headers
   --auth-header-origins <x>  Comma-separated exact origins allowed to receive those headers (default: target origin)
   --infrastructure           Enable DNS, TLS, SPF, DMARC, DKIM, and CAA checks
@@ -48,7 +49,7 @@ Options:
   --fail-on-severity <level> Exit 2 on actionable findings at or above info/low/medium/high
   --fail-on-baseline <mode>  Exit 2 on baseline new/changed/regressed findings
   --require-baseline         Exit 2 when --baseline is not supplied
-  --fail-on-incomplete        Exit 2 when the scan stops before its queue is exhausted
+  --fail-on-incomplete       Exit 2 when the scan stops before its queue is exhausted
   --help                     Show this help
 
 Validation:
@@ -56,7 +57,7 @@ Validation:
   Validate a local artifact without DNS, HTTP, browser, or third-party access.
 
 The scanner uses GET and HEAD requests only. It does not brute-force, exploit, bypass auth,
-submit forms, or follow links off the target origin.
+submit forms, or follow links outside the written scope.
 `;
 }
 
@@ -177,10 +178,7 @@ function renderText(report) {
 }
 
 async function writePrivateOutput(path, output) {
-  const temporaryPath = `${path}.${process.pid}.tmp`;
-  await writeFile(temporaryPath, `${output}\n`, { encoding: "utf8", mode: 0o600 });
-  await rename(temporaryPath, path);
-  await chmod(path, 0o600);
+  await writePrivateFileAtomic(path, `${output}\n`);
 }
 
 async function main() {
@@ -205,6 +203,7 @@ async function main() {
   const scope = await loadScope(args.scope);
   const config = args.config ? JSON.parse(await readFile(args.config, "utf8")) : {};
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("--config must contain a JSON object.");
+  validateConfig(config);
   const authHeaders = args["auth-headers"] ? JSON.parse(await readFile(args["auth-headers"], "utf8")) : undefined;
   const resume = args.resume ? JSON.parse(await readFile(args.resume, "utf8")) : undefined;
   const suppressions = args.suppressions ? JSON.parse(await readFile(args.suppressions, "utf8")) : undefined;

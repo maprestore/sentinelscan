@@ -112,6 +112,10 @@ test("dashboard reports invalid requests as client errors, not server faults", a
     const badEmailDomain = await post(path, { target, confirmAuthorized: true, emailDomain: "https://evil.example" });
     assert.equal(badEmailDomain.status, 400, `${path}: emailDomain must be a hostname`);
 
+    const outOfScopeEmailDomain = await post(path, { target, confirmAuthorized: true, checkInfrastructure: true, emailDomain: "outside.example" });
+    assert.equal(outOfScopeEmailDomain.status, 400, `${path}: emailDomain must be in scan scope`);
+    assert.match(outOfScopeEmailDomain.body.error, /emailDomain must be included in the explicit scan scope/);
+
     const notJson = await post(path, "not json", true);
     assert.equal(notJson.status, 400, `${path}: malformed JSON`);
     assert.match(notJson.body.error, /valid JSON/);

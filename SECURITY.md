@@ -40,7 +40,7 @@ SentinelScan deliberately does **not** implement exploitation, credential attack
 
 ## Handling your own scan results
 
-Reports can contain internal URLs, response details, and inventory of your client-side APIs. Treat them as sensitive: keep them private, restrict who can read CI artifacts, and limit who can edit the `SENTINEL_SCOPE_JSON` repository secret.
+Reports can contain internal URLs, response details, and inventory of your client-side APIs. Treat them as sensitive: keep them private, restrict who can read CI artifacts, and limit who can edit the `SENTINEL_SCOPE_JSON` environment secret and its deployment-branch rule.
 
 ## Supported versions
 

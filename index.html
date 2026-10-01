@@ -55,7 +55,7 @@
     <section class="section" id="triage"><div class="tag"><strong>02 / TRIAGE MATRIX</strong><span>findings with context</span></div><div class="triage-grid"><article class="triage-panel"><div class="triage-head"><strong>SEVERITY DISTRIBUTION</strong><span>04 SIGNALS / FIXTURE</span></div><div class="severity-stack"><div class="severity-row high"><label>High</label><div class="severity-bar"><span style="width:28%"></span></div><b>01</b></div><div class="severity-row med"><label>Medium</label><div class="severity-bar"><span style="width:54%"></span></div><b>02</b></div><div class="severity-row low"><label>Low</label><div class="severity-bar"><span style="width:78%"></span></div><b>03</b></div><div class="triage-foot"><span>Risk / <strong>74</strong></span><span>Grade / <strong>C</strong></span></div></div></article><article class="triage-panel"><div class="triage-head"><strong>REVIEW LEDGER</strong><span>STABLE FINGERPRINTS</span></div><div class="packet-log"><div class="packet-line"><time>HTTP 01</time><b>Transport baseline captured</b><span>STAGED</span></div><div class="packet-line"><time>FORM 02</time><b>Credential action mapped</b><span>LINKED</span></div><div class="packet-line"><time>CI 03</time><b>SARIF output prepared</b><span>READY</span></div><div class="packet-line"><time>BASE 04</time><b>Regression anchor available</b><span>READY</span></div></div></article></div></section>
     <section class="section" id="command-center"><div class="tag"><strong>04 / COMMAND INTELLIGENCE</strong><span>turn signal into action</span></div><div class="command-center"><article class="decision-card"><div class="decision-head"><strong>RECOMMENDED NEXT MOVE</strong><span data-decision-confidence>96% CONFIDENCE</span></div><div class="decision-body"><div class="decision-index">01</div><div><h2 data-decision-title>Move sign-in traffic to HTTPS.</h2><p data-decision-copy>Transport and credential-form evidence align on one high-value fix. Secure the sign-in path before expanding scope or adding more checks.</p><span class="decision-tag" data-decision-tag>HIGH / EVIDENCE ALIGNED</span><div class="decision-actions"><button type="button" data-playbook>BUILD REMEDIATION PLAN</button><button class="secondary" type="button" data-handoff>COPY HANDOFF</button></div></div></div></article><aside class="telemetry-stack"><div class="telemetry-card"><span>Signal confidence</span><strong data-confidence>96%</strong><div class="telemetry-bar"><span data-confidence-bar style="width:96%"></span></div><small>evidence aligned</small></div><div class="telemetry-card"><span>Surface coverage</span><strong data-coverage>82%</strong><div class="telemetry-bar"><span data-coverage-bar style="width:82%"></span></div><small>8 pages / 4 signal groups</small></div><div class="telemetry-card alert"><span>Change delta</span><strong data-delta>+01</strong><small>new high-priority path</small></div><div class="telemetry-card"><span>Handoff state</span><strong data-handoff-state>READY</strong><small>JSON / SARIF / CLI</small></div></aside></div></section>
     <section class="section" id="workbench"><div class="tag"><strong>05 / FINDINGS WORKBENCH</strong><span>review, assign, export</span></div><div class="workbench"><div class="workbench-toolbar"><div><strong>AUTHORIZATION-AWARE REVIEW QUEUE</strong><small><span data-workbench-count>06 OPEN</span> / stable fingerprints / fixture evidence</small></div><div class="workbench-actions"><label class="workbench-search"><span>SEARCH</span><input type="search" placeholder="finding, path, evidence" data-finding-search></label><button type="button" data-export-triage>EXPORT TRIAGE CSV</button></div></div><div class="workbench-layout"><div class="finding-list"><div class="finding-filters" role="group" aria-label="Finding severity filter"><button class="finding-filter active" type="button" data-finding-filter="all">ALL / 06</button><button class="finding-filter" type="button" data-finding-filter="high">HIGH / 02</button><button class="finding-filter" type="button" data-finding-filter="medium">MED / 02</button><button class="finding-filter" type="button" data-finding-filter="low">LOW / 02</button></div><button class="finding-row active" type="button" data-finding-row data-finding-id="transport" data-severity="high" data-title="Site accepts unencrypted transport" data-evidence="The fixture origin is reachable over HTTP." data-location="/" data-fix="Serve the entire origin over HTTPS." data-fingerprint="a1b2c3d4e5f60718"><span class="finding-index">01</span><span class="finding-main"><strong>Site accepts unencrypted transport</strong><small>HTTP posture / origin baseline</small></span><span class="finding-severity high">HIGH</span><span class="finding-status">OPEN</span></button><button class="finding-row" type="button" data-finding-row data-finding-id="credential-form" data-severity="high" data-title="Credential form uses an unencrypted action" data-evidence="A password form submits to an HTTP action." data-location="/login" data-fix="Post credentials only to HTTPS." data-fingerprint="b2c3d4e5f6071829"><span class="finding-index">02</span><span class="finding-main"><strong>Credential form uses an unencrypted action</strong><small>credential path / form evidence</small></span><span class="finding-severity high">HIGH</span><span class="finding-status">OPEN</span></button><button class="finding-row" type="button" data-finding-row data-finding-id="csp" data-severity="medium" data-title="Content-Security-Policy is absent" data-evidence="No CSP header was observed." data-location="/" data-fix="Deploy a tested Content-Security-Policy." data-fingerprint="c3d4e5f6071829ab"><span class="finding-index">03</span><span class="finding-main"><strong>Content-Security-Policy is absent</strong><small>browser defense / policy signal</small></span><span class="finding-severity medium">MED</span><span class="finding-status">OPEN</span></button><button class="finding-row" type="button" data-finding-row data-finding-id="sri" data-severity="medium" data-title="External script lacks integrity metadata" data-evidence="A third-party script is loaded without SRI." data-location="/app.js" data-fix="Pin trusted assets and add SRI." data-fingerprint="d4e5f6071829abcd"><span class="finding-index">04</span><span class="finding-main"><strong>External script lacks integrity metadata</strong><small>supply chain / script evidence</small></span><span class="finding-severity medium">MED</span><span class="finding-status">OPEN</span></button><button class="finding-row" type="button" data-finding-row data-finding-id="cookie" data-severity="low" data-title="Session cookie lacks HttpOnly" data-evidence="The session cookie omits HttpOnly." data-location="Set-Cookie: session" data-fix="Set HttpOnly on session cookies." data-fingerprint="e5f6071829abcdef"><span class="finding-index">05</span><span class="finding-main"><strong>Session cookie lacks HttpOnly</strong><small>session policy / cookie signal</small></span><span class="finding-severity low">LOW</span><span class="finding-status">OPEN</span></button><button class="finding-row" type="button" data-finding-row data-finding-id="security-txt" data-severity="low" data-title="security.txt is unavailable" data-evidence="The security contact document returned 404." data-location="/.well-known/security.txt" data-fix="Publish a current security.txt." data-fingerprint="f6071829abcdef01"><span class="finding-index">06</span><span class="finding-main"><strong>security.txt is unavailable</strong><small>disclosure / availability signal</small></span><span class="finding-severity low">LOW</span><span class="finding-status">OPEN</span></button></div><aside class="finding-detail" aria-live="polite"><div class="detail-kicker"><span>SELECTED FINDING / <b data-detail-severity>HIGH</b></span><strong data-detail-status>OPEN</strong></div><h2 data-detail-title>Site accepts unencrypted transport</h2><p data-detail-evidence>The fixture origin is reachable over HTTP.</p><dl class="detail-meta"><div><dt>Location</dt><dd data-detail-location>/</dd></div><div><dt>Fingerprint</dt><dd data-detail-fingerprint>a1b2c3d4e5f60718</dd></div></dl><div class="detail-remediation"><span>REMEDIATION</span><p data-detail-fix>Serve the entire origin over HTTPS.</p></div><div class="detail-actions"><button type="button" data-mark-reviewed>MARK REVIEWED</button><button class="secondary" type="button" data-copy-evidence>COPY EVIDENCE</button></div><small class="detail-note" data-detail-note>Review status is stored locally in this browser. No target request is made.</small></aside></div></div></section>
-    <section class="section"><div class="cta"><div><h2>Put your authorized surface on the board.</h2><p>Start locally, review the evidence, then wire the manual GitHub workflow to SARIF.</p><div class="copy-row"><code id="scan-command">node src/cli.mjs --target https://your-authorized-site.example --scope scope.json --confirm-authorized</code><button class="copy" id="copy-command" type="button">COPY</button></div></div><a class="button" href="https://github.com/">Explore the repo</a></div></section>
+    <section class="section"><div class="cta"><div><h2>Put your authorized surface on the board.</h2><p>Start locally, review the evidence, then wire the manual GitHub workflow to SARIF.</p><div class="copy-row"><code id="scan-command">node src/cli.mjs --target 'https://your-authorized-site.example' --scope scope.json --confirm-authorized</code><button class="copy" id="copy-command" type="button">COPY</button></div></div><a class="button" href="https://github.com/">Explore the repo</a></div></section>
    <section class="section" id="resolution-room"><div class="tag"><strong>06 / INCIDENT CONTROL ROOM</strong><span>watch the fix move</span></div><div class="resolution-room"><div class="resolution-head"><div><strong>ACTIVE REMEDIATION LOOP</strong><span>LOCAL SAFE SIMULATION / NO TARGET REQUESTS</span></div><span class="resolution-badge" data-resolution-state>QUEUED</span></div><div class="resolution-grid"><article class="resolution-main"><div class="resolution-kicker">HIGH PRIORITY FINDING <span>DEFENSIVE REVIEW</span></div><h2 data-resolution-title>Site accepts unencrypted transport</h2><p data-resolution-note>Evidence is queued for a safe remediation replay.</p><div class="resolution-flow"><span class="resolution-step active" data-resolution-step="0">INTAKE</span><span class="resolution-step" data-resolution-step="1">PATCH</span><span class="resolution-step" data-resolution-step="2">VERIFY</span><span class="resolution-step" data-resolution-step="3">CLOSE</span></div><div class="resolution-progress"><span data-resolution-progress></span></div><div class="resolution-actions"><button type="button" data-resolution-run>RUN RESOLUTION</button><button class="secondary" type="button" data-resolution-pause disabled>PAUSE FLOW</button><span class="resolution-percent" data-resolution-percent>0%</span></div></article><aside class="resolution-events"><strong>LIVE OPERATOR EVENT STREAM</strong><div class="resolution-log"><div class="resolution-event active" data-resolution-event><time>00:00</time><i></i><span>Finding accepted into the review queue.</span></div><div class="resolution-event" data-resolution-event><time>--:--</time><i></i><span>Remediation plan is waiting to start.</span></div><div class="resolution-event" data-resolution-event><time>--:--</time><i></i><span>Safe verification has not started.</span></div><div class="resolution-event" data-resolution-event><time>--:--</time><i></i><span>Report packet will update when verified.</span></div></div><div class="resolution-metrics"><div class="resolution-metric"><b data-resolution-open>06</b><span>open</span></div><div class="resolution-metric"><b data-resolution-active>00</b><span>active</span></div><div class="resolution-metric"><b data-resolution-verified>00</b><span>verified</span></div></div></aside></div></div></section>
    <footer><strong>SENTINELSCAN / SAFE BY DEFAULT</strong><span>GET ONLY &middot; SAME-ORIGIN &middot; NO EXPLOIT ATTEMPTS</span></footer>
    </main><aside class="palette" id="palette" hidden><div class="palette-head"><strong>COMMAND PALETTE</strong><span>ESC TO CLOSE</span></div><button type="button" data-command="demo">Run local safe demo</button><button type="button" data-command="deck">Focus command deck</button><button type="button" data-command="copy">Copy authorized scan command</button></aside><script>const c=document.querySelector('#matrix'),r=matchMedia('(prefers-reduced-motion: reduce)').matches;if(!r){const x=c.getContext('2d'),s='01 / + - : signal',d=[];const z=()=>{c.width=innerWidth;c.height=innerHeight;d.length=Math.ceil(innerWidth/18);d.fill(0).forEach((_,i)=>d[i]=Math.random()*innerHeight/16)};const f=()=>{x.fillStyle='rgba(3,5,7,.12)';x.fillRect(0,0,c.width,c.height);x.fillStyle='#b9ff4c';x.font='10px monospace';d.forEach((y,i)=>{x.globalAlpha=Math.random()*.3;x.fillText(s[Math.floor(Math.random()*s.length)],i*18,y*16);d[i]=y*16>c.height&&Math.random()>.975?0:y+.45});requestAnimationFrame(f)};addEventListener('resize',z);z();f()}</script><script>const trigger=document.querySelector('#demo-trigger'),panel=document.querySelector('#demo-panel'),state=document.querySelector('[data-demo-state]'),bar=document.querySelector('[data-progress]'),log=document.querySelector('[data-demo-log]'),risk=document.querySelector('[data-risk]'),paths=document.querySelector('[data-paths]'),pages=document.querySelector('[data-pages-scanned]');let timer;const phases=[['SCOPE','Exact origin scope accepted. No network request made.'],['MAP','Fixture pages inventoried: headers, session, forms, scripts.'],['CORRELATE','Signals connected into two reviewable paths.'],['REPORT','Evidence bundle staged for JSON and SARIF output.']];trigger?.addEventListener('click',()=>{clearInterval(timer);panel.classList.add('open');state.textContent='RUNNING / LOCAL ONLY';trigger.disabled=true;trigger.textContent='SIMULATING...';bar.style.width='0%';risk.textContent='--';paths.textContent='0';pages.textContent='0';log.replaceChildren();let i=0;timer=setInterval(()=>{const [label,message]=phases[i],line=document.createElement('div');line.className=i===phases.length-1?'good':'';line.textContent=label+' // '+message;log.append(line);bar.style.width=((i+1)/phases.length*100)+'%';pages.textContent=String((i+1)*2);i++;if(i===phases.length){clearInterval(timer);state.textContent='COMPLETE / NO NETWORK';risk.textContent='74';paths.textContent='2';trigger.disabled=false;trigger.textContent='RUN AGAIN'}},620)});const detail=document.querySelector('#queue-detail');document.querySelectorAll('.queue .item').forEach(item=>{const show=()=>detail.textContent=item.dataset.detail;item.addEventListener('click',show);item.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();show()}})});document.querySelector('#copy-command')?.addEventListener('click',async()=>{const b=document.querySelector('#copy-command');try{await navigator.clipboard.writeText(document.querySelector('#scan-command').textContent);b.textContent='COPIED'}catch{b.textContent='SELECT COMMAND'}setTimeout(()=>b.textContent='COPY',1400)})</script>
@@ -96,17 +96,42 @@
     const targetInput = document.querySelector('#target-url');
     const targetStatus = document.querySelector('[data-target-status]');
     const targetReadout = document.querySelector('[data-target-readout]');
+    const quotePosix = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
+    const sensitiveQueryKey = /(?:authorization|api[_-]?key|client[_-]?secret|password|passwd|secret|session|signature|sig|token|access[_-]?token|refresh[_-]?token)/i;
+    const sensitiveAssignment = /\b(?:authorization|api[_-]?key|client[_-]?secret|password|passwd|secret|session|signature|sig|token|access[_-]?token|refresh[_-]?token)\b\s*[=:]\s*[^&\s,;]+/i;
+    const decodeRepeated = (value) => { let current = String(value ?? ''); for (let attempt = 0; attempt < 32; attempt += 1) { try { const decoded = decodeURIComponent(current); if (decoded === current) break; current = decoded; } catch { break; } } return current; };
+    const containsCredentialShapedData = (url, depth = 0) => {
+      if (depth > 3 || url.username || url.password) return true;
+      const fragment = decodeRepeated(url.hash.slice(1));
+      if (/%[0-9a-f]{2}/i.test(fragment) || sensitiveAssignment.test(fragment)) return true;
+      for (const [key, child] of url.searchParams) {
+        if (sensitiveQueryKey.test(key)) return true;
+        const decoded = decodeRepeated(child);
+        if (/%[0-9a-f]{2}/i.test(decoded) || sensitiveAssignment.test(decoded)) return true;
+        const nested = decoded.startsWith('//') ? `https:${decoded}` : decoded;
+        if (/^https?:\/\//i.test(nested)) {
+          try { if (containsCredentialShapedData(new URL(nested), depth + 1)) return true; } catch {}
+        }
+      }
+      return false;
+    };
+    const normalizeTarget = (value) => {
+      const parsed = new URL(String(value).trim());
+      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('Enter a plain HTTP(S) URL.');
+      if (containsCredentialShapedData(parsed)) throw new Error('Credential-shaped query or fragment data is not accepted; use authorized request headers instead.');
+      parsed.hash = '';
+      return parsed.href;
+    };
+    window.__sentinelQuotePosix = quotePosix;
+    window.__sentinelNormalizeTarget = normalizeTarget;
     const applyTarget = () => {
       try {
-        const parsed = new URL(targetInput.value.trim());
-        if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('Enter a plain HTTP(S) URL.');
-        parsed.hash = '';
-        const target = parsed.toString();
+        const target = normalizeTarget(targetInput.value);
         targetInput.value = target;
         targetReadout.textContent = target;
         targetStatus.textContent = 'READY';
         targetStatus.classList.remove('invalid');
-        document.querySelector('#scan-command').textContent = `node src/cli.mjs --target ${target} --scope scope.json --confirm-authorized`;
+        document.querySelector('#scan-command').textContent = `node src/cli.mjs --target ${quotePosix(target)} --scope scope.json --confirm-authorized`;
         try { localStorage.setItem('sentinelscan-target', target); } catch {}
       } catch {
         targetStatus.textContent = 'INVALID URL';
@@ -115,6 +140,23 @@
     };
     targetForm?.addEventListener('submit', (event) => { event.preventDefault(); applyTarget(); });
     try { const savedTarget = localStorage.getItem('sentinelscan-target'); if (savedTarget) { targetInput.value = savedTarget; applyTarget(); } } catch {}
+    const copyCommandButton = document.querySelector('#copy-command');
+    copyCommandButton?.addEventListener('click', async () => {
+      const command = document.querySelector('#scan-command');
+      try {
+        if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable.');
+        await navigator.clipboard.writeText(command.textContent);
+        copyCommandButton.textContent = 'COPIED';
+      } catch {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(command);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        copyCommandButton.textContent = 'SELECT + COPY';
+      }
+      window.setTimeout(() => { copyCommandButton.textContent = 'COPY'; }, 1400);
+    });
     const processStages = [...document.querySelectorAll('[data-process-step]')];
     const targetStages = [...document.querySelectorAll('[data-target-stage]')];
     const processCaption = document.querySelector('[data-process-caption]');
@@ -133,7 +175,20 @@
      const makeReport = () => ({ schemaVersion: 2, scanner: { name: 'SentinelScan', version: '0.5.0' }, generatedAt: new Date().toISOString(), target: 'https://authorized-surface.test', scope: { name: 'fixture-scope', allowedOrigins: ['https://authorized-surface.test'] }, summary: { pagesScanned: 8, resourcesScanned: 4, requestsMade: 17, termination: 'queue-exhausted', findings: findings.length, bySeverity: { high: 2, medium: 2, low: 2 }, byConfidence: { high: 4, medium: 1, low: 1 } }, risk: { score: 74, grade: 'F', method: 'transparent-weighted-v2-diminishing-returns' }, attackPaths: [{ id: 'credential-interception-path', severity: 'high', title: 'Credentials can travel through an unencrypted path', findingFingerprints: ['a1b2c3d4e5f60718', 'b2c3d4e5f6071829'] }, { id: 'browser-supply-chain-path', severity: 'medium', title: 'Browser supply-chain controls are weak', findingFingerprints: ['c3d4e5f6071829ab', 'd4e5f6071829abcd'] }], findings, inventory: { totals: { pages: 8, forms: 2, scripts: 3, links: 12, clientApiEndpoints: ['/api/session', '/api/search'] } }, guardrails: ['GET / HEAD only', 'same-scope', 'no form submits', 'bounded resources', 'fixture only'] });
     const sarif = (report) => ({ $schema: 'https://json.schemastore.org/sarif-2.1.0.json', version: '2.1.0', runs: [{ tool: { driver: { name: report.scanner.name, version: report.scanner.version, rules: report.findings.map((item) => ({ id: item.id, name: item.title, shortDescription: { text: item.title }, help: { text: item.remediation }, properties: { severity: item.severity } })) } }, automationDetails: { id: `sentinelscan/${report.target}` }, properties: { riskScore: report.risk.score, riskGrade: report.risk.grade, attackPaths: report.attackPaths.length }, results: report.findings.map((item) => ({ ruleId: item.id, level: { high: 'error', medium: 'warning', low: 'note' }[item.severity], message: { text: `${item.evidence} Fix: ${item.remediation}` }, fingerprints: { sentinelscan: item.fingerprint }, locations: [{ physicalLocation: { artifactLocation: { uri: item.location } } }] })) }] });
     let report;
-    const setReport = (next, cached = false) => { report = next; progress.style.width = '100%'; risk.textContent = next.risk.score; paths.textContent = next.attackPaths.length; pages.textContent = next.summary.pagesScanned; state.textContent = `${cached ? 'CACHED' : 'REPORT READY'} / JSON + SARIF`; buttons.forEach((button) => { button.disabled = false; }); setProcessStep(processStages.length); try { localStorage.setItem('sentinelscan-last-report', JSON.stringify(next)); } catch {} };
+    const setReport = (next, cached = false) => {
+      if (!next || typeof next !== 'object' || !next.scanner || !Array.isArray(next.findings) || !Array.isArray(next.attackPaths) || !next.risk || !next.summary) return false;
+      report = next;
+      progress.style.width = '100%';
+      risk.textContent = next.risk.score ?? '--';
+      paths.textContent = next.attackPaths.length;
+      pages.textContent = next.summary.pagesScanned ?? 0;
+      state.textContent = `${cached ? 'CACHED' : 'REPORT READY'} / JSON + SARIF`;
+      buttons.forEach((button) => { button.disabled = false; });
+      setProcessStep(processStages.length);
+      try { localStorage.setItem('sentinelscan-last-report', JSON.stringify(next)); } catch {}
+      return true;
+    };
+    window.__sentinelSetReport = setReport;
     const download = (name, value) => { const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([value], { type: 'application/json' })); link.download = name; link.click(); window.setTimeout(() => URL.revokeObjectURL(link.href), 1000); };
     buttons.forEach((button) => button.addEventListener('click', () => { if (!report) return; const isSarif = button.dataset.export === 'sarif'; download(`sentinelscan-fixture-report.${isSarif ? 'sarif' : 'json'}`, `${JSON.stringify(isSarif ? sarif(report) : report, null, 2)}\n`); state.textContent = `${isSarif ? 'SARIF' : 'JSON'} EXPORT READY / LOCAL`; }));
     trigger?.addEventListener('click', () => { setProcessStep(0); [1, 2, 3].forEach((step) => window.setTimeout(() => setProcessStep(step), step * 620)); window.setTimeout(() => setReport(makeReport()), 2600); });
@@ -158,34 +213,155 @@
 </script>
 <script>
   (() => {
-    const rows = [...document.querySelectorAll('[data-finding-row]')];
-    if (!rows.length) return;
+    const list = document.querySelector('.finding-list');
+    if (!list) return;
     const filters = [...document.querySelectorAll('[data-finding-filter]')];
     const search = document.querySelector('[data-finding-search]');
     const count = document.querySelector('[data-workbench-count]');
     const detail = { title: document.querySelector('[data-detail-title]'), severity: document.querySelector('[data-detail-severity]'), status: document.querySelector('[data-detail-status]'), evidence: document.querySelector('[data-detail-evidence]'), location: document.querySelector('[data-detail-location]'), fingerprint: document.querySelector('[data-detail-fingerprint]'), fix: document.querySelector('[data-detail-fix]'), note: document.querySelector('[data-detail-note]') };
     const mark = document.querySelector('[data-mark-reviewed]');
     const copy = document.querySelector('[data-copy-evidence]');
+    const exportButton = document.querySelector('[data-export-triage]');
     const key = 'sentinelscan-reviewed-findings';
+    const rows = () => [...list.querySelectorAll('[data-finding-row]')];
+    const readReviewed = () => { try { const value = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(value) ? value.map(String) : []; } catch { return []; } };
+    const rowKey = (row) => row.dataset.findingKey || row.dataset.fingerprint || row.dataset.findingId || '';
     let filter = 'all';
-    let active = rows[0];
-    try { const reviewed = JSON.parse(localStorage.getItem(key) || '[]'); rows.forEach((row) => { row.dataset.reviewed = reviewed.includes(row.dataset.findingId) ? 'true' : 'false'; }); } catch {}
-    const save = () => { try { localStorage.setItem(key, JSON.stringify(rows.filter((row) => row.dataset.reviewed === 'true').map((row) => row.dataset.findingId))); } catch {} };
-    const updateCount = () => { const open = rows.filter((row) => row.dataset.reviewed !== 'true').length; count.textContent = `${String(open).padStart(2, '0')} OPEN / ${rows.length} TOTAL`; rows.forEach((row) => { row.classList.toggle('reviewed', row.dataset.reviewed === 'true'); row.querySelector('.finding-status').textContent = row.dataset.reviewed === 'true' ? 'REVIEWED' : 'OPEN'; }); };
-    const select = (row) => { active = row; rows.forEach((item) => item.classList.toggle('active', item === row)); detail.title.textContent = row.dataset.title; detail.severity.textContent = row.dataset.severity.toUpperCase(); detail.status.textContent = row.dataset.reviewed === 'true' ? 'REVIEWED' : 'OPEN'; detail.evidence.textContent = row.dataset.evidence; detail.location.textContent = row.dataset.location; detail.fingerprint.textContent = row.dataset.fingerprint; detail.fix.textContent = row.dataset.fix; mark.textContent = row.dataset.reviewed === 'true' ? 'REOPEN FINDING' : 'MARK REVIEWED'; };
-    const refresh = () => { const query = search.value.trim().toLowerCase(); let firstVisible; rows.forEach((row) => { const matchesFilter = filter === 'all' || row.dataset.severity === filter; const matchesSearch = !query || row.textContent.toLowerCase().includes(query) || Object.values(row.dataset).some((value) => value.toLowerCase().includes(query)); row.hidden = !(matchesFilter && matchesSearch); if (!row.hidden && !firstVisible) firstVisible = row; }); if (active.hidden && firstVisible) select(firstVisible); updateCount(); };
+    let active = null;
+    const save = () => { try { localStorage.setItem(key, JSON.stringify(rows().filter((row) => row.dataset.reviewed === 'true').map(rowKey).filter(Boolean))); } catch {} };
+    const setText = (node, value) => { if (node) node.textContent = String(value ?? ''); };
+    const updateCount = () => {
+      const currentRows = rows();
+      const open = currentRows.filter((row) => row.dataset.reviewed !== 'true').length;
+      const totals = { all: currentRows.length, high: 0, medium: 0, low: 0 };
+      currentRows.forEach((row) => { if (totals[row.dataset.severity] !== undefined) totals[row.dataset.severity] += 1; });
+      setText(count, `${String(open).padStart(2, '0')} OPEN / ${currentRows.length} TOTAL`);
+      filters.forEach((button) => {
+        const value = button.dataset.findingFilter;
+        const label = { all: 'ALL', high: 'HIGH', medium: 'MED', low: 'LOW' }[value] || value.toUpperCase();
+        button.textContent = `${label} / ${String(totals[value] || 0).padStart(2, '0')}`;
+      });
+      currentRows.forEach((row) => {
+        const reviewed = row.dataset.reviewed === 'true';
+        row.classList.toggle('reviewed', reviewed);
+        setText(row.querySelector('.finding-status'), reviewed ? 'REVIEWED' : 'OPEN');
+      });
+    };
+    const select = (row) => {
+      if (!row) return;
+      active = row;
+      rows().forEach((item) => item.classList.toggle('active', item === row));
+      setText(detail.title, row.dataset.title);
+      setText(detail.severity, (row.dataset.severity || 'info').toUpperCase());
+      setText(detail.status, row.dataset.reviewed === 'true' ? 'REVIEWED' : 'OPEN');
+      setText(detail.evidence, row.dataset.evidence);
+      setText(detail.location, row.dataset.location);
+      setText(detail.fingerprint, row.dataset.fingerprint);
+      setText(detail.fix, row.dataset.fix);
+      if (mark) { mark.textContent = row.dataset.reviewed === 'true' ? 'REOPEN FINDING' : 'MARK REVIEWED'; mark.disabled = false; }
+      if (copy) copy.disabled = false;
+    };
+    const refresh = () => {
+      const query = search?.value.trim().toLowerCase() || '';
+      const currentRows = rows();
+      let firstVisible;
+      currentRows.forEach((row) => {
+        const matchesFilter = filter === 'all' || row.dataset.severity === filter;
+        const searchable = [row.textContent, ...Object.values(row.dataset)].join(' ').toLowerCase();
+        row.hidden = !(matchesFilter && (!query || searchable.includes(query)));
+        if (!row.hidden && !firstVisible) firstVisible = row;
+      });
+      if (firstVisible) {
+        if (!active || active.hidden) select(firstVisible);
+        else currentRows.forEach((row) => row.classList.toggle('active', row === active));
+      } else {
+        active = null;
+        currentRows.forEach((row) => row.classList.remove('active'));
+        if (mark) mark.disabled = true;
+        if (copy) copy.disabled = true;
+        Object.values(detail).forEach((node) => setText(node, ''));
+      }
+      updateCount();
+    };
+    const renderRows = (findings) => {
+      const currentRows = rows();
+      const reviewed = new Set([...readReviewed(), ...currentRows.filter((row) => row.dataset.reviewed === 'true').map(rowKey)]);
+      const selectedKey = active ? rowKey(active) : '';
+      currentRows.forEach((row) => row.remove());
+      list.querySelector('[data-finding-empty]')?.remove();
+      const items = Array.isArray(findings) ? findings : [];
+      items.forEach((item, index) => {
+        const id = String(item?.id ?? `finding-${index + 1}`);
+        const severityValue = String(item?.severity ?? 'info').toLowerCase();
+        const severity = ['high', 'medium', 'low', 'info'].includes(severityValue) ? severityValue : 'info';
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'finding-row';
+        row.dataset.findingRow = '';
+        row.dataset.findingId = id;
+        row.dataset.severity = severity;
+        row.dataset.title = String(item?.title ?? id);
+        row.dataset.evidence = String(item?.evidence ?? '');
+        row.dataset.location = String(item?.location ?? '');
+        row.dataset.fix = String(item?.remediation ?? item?.fix ?? '');
+        row.dataset.fingerprint = String(item?.fingerprint ?? '');
+        row.dataset.findingKey = row.dataset.fingerprint || `${id}:${index}`;
+        row.dataset.category = String(item?.category ?? '');
+        row.dataset.confidence = String(item?.confidence ?? '');
+        row.dataset.reviewed = reviewed.has(id) || reviewed.has(row.dataset.findingKey) ? 'true' : 'false';
+        const number = document.createElement('span');
+        number.className = 'finding-index';
+        number.textContent = String(index + 1).padStart(2, '0');
+        const main = document.createElement('span');
+        main.className = 'finding-main';
+        const title = document.createElement('strong');
+        title.textContent = row.dataset.title;
+        const summary = document.createElement('small');
+        summary.textContent = `${row.dataset.location || '(target)'} / live finding`;
+        main.append(title, summary);
+        const badge = document.createElement('span');
+        badge.className = `finding-severity ${severity === 'info' ? 'low' : severity}`;
+        badge.textContent = severityValue.toUpperCase();
+        const status = document.createElement('span');
+        status.className = 'finding-status';
+        status.textContent = row.dataset.reviewed === 'true' ? 'REVIEWED' : 'OPEN';
+        row.append(number, main, badge, status);
+        list.append(row);
+      });
+      if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'finding-empty';
+        empty.dataset.findingEmpty = '';
+        empty.setAttribute('role', 'status');
+        empty.textContent = 'No findings detected.';
+        list.append(empty);
+      }
+      active = rows().find((row) => rowKey(row) === selectedKey) || null;
+      refresh();
+    };
+    window.__sentinelRenderFindings = renderRows;
     filters.forEach((button) => button.addEventListener('click', () => { filter = button.dataset.findingFilter; filters.forEach((item) => item.classList.toggle('active', item === button)); refresh(); }));
-    search.addEventListener('input', refresh);
-    rows.forEach((row) => row.addEventListener('click', () => select(row)));
-    mark.addEventListener('click', () => { active.dataset.reviewed = active.dataset.reviewed === 'true' ? 'false' : 'true'; save(); select(active); updateCount(); detail.note.textContent = active.dataset.reviewed === 'true' ? 'Marked locally for review tracking. No target request is made.' : 'Reopened locally for follow-up. No target request is made.'; });
-    copy.addEventListener('click', async () => { const text = `${active.dataset.title}\nSeverity: ${active.dataset.severity.toUpperCase()}\nEvidence: ${active.dataset.evidence}\nLocation: ${active.dataset.location}\nFingerprint: ${active.dataset.fingerprint}\nRemediation: ${active.dataset.fix}`; try { await navigator.clipboard.writeText(text); copy.textContent = 'COPIED'; } catch { copy.textContent = 'SELECT TEXT'; } window.setTimeout(() => { copy.textContent = 'COPY EVIDENCE'; }, 1400); });
-    document.querySelector('[data-export-triage]').addEventListener('click', () => { const escape = (value) => `"${String(value).replaceAll('"', '""')}"`; const csv = ['id,severity,title,evidence,location,fingerprint,remediation,status', ...rows.map((row) => [row.dataset.findingId, row.dataset.severity, row.dataset.title, row.dataset.evidence, row.dataset.location, row.dataset.fingerprint, row.dataset.fix, row.dataset.reviewed === 'true' ? 'reviewed' : 'open'].map(escape).join(','))].join('\n'); const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([`${csv}\n`], { type: 'text/csv' })); link.download = 'sentinelscan-triage.csv'; link.click(); window.setTimeout(() => URL.revokeObjectURL(link.href), 1000); });
-    select(active); refresh();
+    search?.addEventListener('input', refresh);
+    list.addEventListener('click', (event) => { const row = event.target.closest?.('[data-finding-row]'); if (row && list.contains(row)) select(row); });
+    mark?.addEventListener('click', () => { if (!active) return; active.dataset.reviewed = active.dataset.reviewed === 'true' ? 'false' : 'true'; save(); select(active); updateCount(); setText(detail.note, active.dataset.reviewed === 'true' ? 'Marked locally for review tracking. No target request is made.' : 'Reopened locally for follow-up. No target request is made.'); });
+    copy?.addEventListener('click', async () => { if (!active) return; const text = `${active.dataset.title}\nSeverity: ${(active.dataset.severity || 'info').toUpperCase()}\nEvidence: ${active.dataset.evidence}\nLocation: ${active.dataset.location}\nFingerprint: ${active.dataset.fingerprint}\nRemediation: ${active.dataset.fix}`; try { await navigator.clipboard.writeText(text); copy.textContent = 'COPIED'; } catch { copy.textContent = 'SELECT TEXT'; } window.setTimeout(() => { copy.textContent = 'COPY EVIDENCE'; }, 1400); });
+    exportButton?.addEventListener('click', () => {
+      const escape = (value) => { let text = String(value ?? ''); if (/^[\x00-\x20\uFEFF]*[=+\-@]/.test(text)) text = `'${text}`; return `"${text.replaceAll('"', '""')}"`; };
+      const csv = ['id,severity,title,evidence,location,fingerprint,remediation,status', ...rows().map((row) => [row.dataset.findingId, row.dataset.severity, row.dataset.title, row.dataset.evidence, row.dataset.location, row.dataset.fingerprint, row.dataset.fix, row.dataset.reviewed === 'true' ? 'reviewed' : 'open'].map(escape).join(','))].join('\n');
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([`${csv}\n`], { type: 'text/csv;charset=utf-8' }));
+      link.download = 'sentinelscan-triage.csv';
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    });
+    const reviewed = new Set(readReviewed());
+    rows().forEach((row) => { row.dataset.reviewed = reviewed.has(row.dataset.findingId) || reviewed.has(rowKey(row)) ? 'true' : 'false'; });
+    select(rows()[0]);
+    refresh();
   })();
 </script>
 <script>
   (() => {
-    const rows = [...document.querySelectorAll('[data-finding-row]')];
     const state = document.querySelector('[data-resolution-state]');
     const title = document.querySelector('[data-resolution-title]');
     const note = document.querySelector('[data-resolution-note]');
@@ -202,9 +378,9 @@
     let phase = 0;
     let timer;
     let running = false;
-    const render = () => { const current = phases[phase]; state.textContent = current.state; progress.style.width = `${current.percent}%`; percent.textContent = `${current.percent}%`; note.textContent = current.note; steps.forEach((step, index) => { step.classList.toggle('active', index === phase); step.classList.toggle('complete', index < phase); }); events.forEach((event, index) => { event.classList.toggle('active', index === phase); event.classList.toggle('complete', index < phase); event.querySelector('span').textContent = index <= phase ? (index === phase ? current.event : 'Step completed. Evidence retained for review.') : 'Waiting for the previous control to complete.'; }); openMetric.textContent = phase === 3 ? '05' : '06'; activeMetric.textContent = running ? '01' : '00'; verifiedMetric.textContent = phase === 3 ? '01' : '00'; run.textContent = phase === 3 ? 'RESTART RESOLUTION' : phase === 0 ? 'RUN RESOLUTION' : 'FLOW RUNNING'; pause.disabled = !running; };
+    const render = () => { const current = phases[phase]; state.textContent = current.state; progress.style.width = `${current.percent}%`; percent.textContent = `${current.percent}%`; note.textContent = current.note; steps.forEach((step, index) => { step.classList.toggle('active', index === phase); step.classList.toggle('complete', index < phase); }); events.forEach((event, index) => { event.classList.toggle('active', index === phase); event.classList.toggle('complete', index < phase); event.querySelector('span').textContent = index <= phase ? (index === phase ? current.event : 'Step completed. Evidence retained for review.') : 'Waiting for the previous control to complete.'; }); if (openMetric) openMetric.textContent = phase === 3 ? '05' : '06'; if (activeMetric) activeMetric.textContent = running ? '01' : '00'; if (verifiedMetric) verifiedMetric.textContent = phase === 3 ? '01' : '00'; run.textContent = phase === 3 ? 'RESTART RESOLUTION' : phase === 0 ? 'RUN RESOLUTION' : 'FLOW RUNNING'; pause.disabled = !running; };
     const advance = () => { if (!running) return; if (phase < phases.length - 1) phase += 1; render(); if (phase < phases.length - 1) timer = window.setTimeout(advance, 950); else { running = false; render(); } };
-    rows.forEach((row) => row.addEventListener('click', () => { title.textContent = row.dataset.title; if (!running) { phase = 0; render(); } }));
+    document.querySelector('.finding-list')?.addEventListener('click', (event) => { const row = event.target.closest?.('[data-finding-row]'); if (!row) return; title.textContent = row.dataset.title; if (!running) { phase = 0; render(); } });
     run.addEventListener('click', () => { window.clearTimeout(timer); if (phase === phases.length - 1) phase = 0; running = true; advance(); });
     pause.addEventListener('click', () => { running = false; window.clearTimeout(timer); render(); });
     render();
@@ -222,55 +398,36 @@
     if (!targetForm || !targetInput) return;
     const runtime = document.createElement('div');
     runtime.className = 'runtime-bar';
-    runtime.innerHTML = '<label><input type="checkbox" data-real-confirm> I own or am explicitly authorized to assess this target</label><label><input type="checkbox" data-allow-private> LOCAL PRIVATE TARGET / FIXTURE ONLY</label><button type="button" data-real-scan>RUN AUTHORIZED SCAN</button><span class="runtime-status" data-runtime-status>CHECKING LOCAL SCANNER...</span>';
+    runtime.innerHTML = '<label><input type="checkbox" data-real-confirm> I own or am explicitly authorized to assess this target</label><label><input type="checkbox" data-allow-private> LOCAL PRIVATE TARGET / FIXTURE ONLY</label><label>API TOKEN <input type="password" data-api-token autocomplete="off" placeholder="only if configured"></label><button type="button" data-real-scan>RUN AUTHORIZED SCAN</button><button type="button" data-cancel-scan disabled>CANCEL SCAN</button><span class="runtime-status" data-runtime-status>CHECKING LOCAL SCANNER...</span>';
     targetForm.closest('.target-bar')?.after(runtime);
     const run = runtime.querySelector('[data-real-scan]');
+    const cancel = runtime.querySelector('[data-cancel-scan]');
     const confirm = runtime.querySelector('[data-real-confirm]');
     const allowPrivate = runtime.querySelector('[data-allow-private]');
+    const apiToken = runtime.querySelector('[data-api-token]');
     const status = runtime.querySelector('[data-runtime-status]');
     let online = false;
+    let activeJobId = null;
+    let cancelling = false;
     const setStatus = (text, tone = '') => { status.textContent = text; status.className = `runtime-status ${tone}`; };
+    const authHeaders = (json = false) => { const headers = json ? { 'content-type': 'application/json' } : {}; const token = apiToken?.value.trim(); if (token) headers['X-SentinelScan-Token'] = token; return headers; };
+    const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
     const updateRows = (report) => {
-      const rows = [...document.querySelectorAll('[data-finding-row]')];
       const severityRank = { high: 0, medium: 1, low: 2, info: 3 };
-      const items = report.findings.length ? [...report.findings].sort((a, b) => (severityRank[a.severity] ?? 9) - (severityRank[b.severity] ?? 9)) : [{ id: 'no-findings', severity: 'info', title: 'No findings detected', evidence: 'The bounded scan returned no posture observations.', location: report.target, remediation: 'Keep the observed controls under review.', fingerprint: 'none' }];
-      rows.forEach((row, index) => {
-        const item = items[index];
-        row.hidden = !item;
-        if (!item) return;
-        const severity = ['high', 'medium', 'low'].includes(item.severity) ? item.severity : 'low';
-        row.dataset.findingId = item.id;
-        row.dataset.severity = severity;
-        row.dataset.title = item.title;
-        row.dataset.evidence = item.evidence;
-        row.dataset.location = item.location;
-        row.dataset.fix = item.remediation;
-        row.dataset.fingerprint = item.fingerprint;
-        row.querySelector('.finding-main strong').textContent = item.title;
-        row.querySelector('.finding-main small').textContent = `${item.location} / live finding`;
-        row.querySelector('.finding-severity').className = `finding-severity ${severity}`;
-        row.querySelector('.finding-severity').textContent = item.severity.toUpperCase();
-        row.querySelector('.finding-status').textContent = 'OPEN';
-      });
-      const counts = { high: 0, medium: 0, low: 0 };
-      report.findings.forEach((item) => { if (counts[item.severity] !== undefined) counts[item.severity] += 1; });
-      document.querySelector('[data-workbench-count]').textContent = `${String(report.findings.length).padStart(2, '0')} OPEN / ${report.findings.length} TOTAL`;
+      const findings = Array.isArray(report.findings) ? report.findings : [];
+      window.__sentinelRenderFindings?.([...findings].sort((a, b) => (severityRank[a.severity] ?? 9) - (severityRank[b.severity] ?? 9)));
       const context = document.querySelector('[data-workbench-count]')?.parentElement; if (context?.lastChild?.nodeType === Node.TEXT_NODE) context.lastChild.textContent = ' / stable fingerprints / live report';
-      document.querySelector('[data-finding-filter="all"]').textContent = `ALL / ${String(report.findings.length).padStart(2, '0')}`;
-      document.querySelector('[data-finding-filter="high"]').textContent = `HIGH / ${String(counts.high).padStart(2, '0')}`;
-      document.querySelector('[data-finding-filter="medium"]').textContent = `MED / ${String(counts.medium).padStart(2, '0')}`;
-      document.querySelector('[data-finding-filter="low"]').textContent = `LOW / ${String(counts.low).padStart(2, '0')}`;
-      rows[0]?.click();
     };
     const applyReport = (report) => {
-      if (typeof setReport === 'function') setReport(report);
+      if (!window.__sentinelSetReport?.(report)) throw new Error('The scan returned an invalid report.');
       document.querySelector('[data-target-readout]').textContent = report.target;
-      document.querySelector('#scan-command').textContent = `node src/cli.mjs --target ${report.target} --scope scope.json --confirm-authorized`;
+      document.querySelector('#scan-command').textContent = `node src/cli.mjs --target ${window.__sentinelQuotePosix(report.target)} --scope scope.json --confirm-authorized`;
       document.querySelector('[data-report-state]').textContent = 'REAL REPORT READY / JSON + SARIF';
       document.querySelector('[data-risk]').textContent = report.risk.score;
       document.querySelector('[data-paths]').textContent = report.attackPaths.length;
       document.querySelector('[data-pages-scanned]').textContent = report.summary.pagesScanned;
-      const priority = report.findings.find((item) => item.severity === 'high') || report.findings.find((item) => item.severity === 'medium') || report.findings.find((item) => item.severity === 'low') || report.findings[0];
+      const findings = Array.isArray(report.findings) ? report.findings : [];
+      const priority = findings.find((item) => item.severity === 'high') || findings.find((item) => item.severity === 'medium') || findings.find((item) => item.severity === 'low') || findings[0];
       if (priority) { document.querySelector('[data-resolution-title]').textContent = priority.title; document.querySelector('[data-resolution-note]').textContent = `${priority.evidence} Real evidence is queued for a safe remediation replay.`; const kicker = document.querySelector('.resolution-kicker'); if (kicker?.firstChild) kicker.firstChild.textContent = `${priority.severity.toUpperCase()} PRIORITY FINDING `; }
       updateRows(report);
     };
@@ -279,16 +436,64 @@
       if (!confirm.checked) { setStatus('AUTHORIZATION CONFIRMATION REQUIRED', 'error'); return; }
       if (!online) { setStatus('LIVE SCANS NEED LOCAL SERVER / RUN node src/server.mjs', 'error'); return; }
       let target;
-      try { const parsed = new URL(targetInput.value.trim()); if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('Enter a plain HTTP(S) URL.'); parsed.hash = ''; target = parsed.href; } catch (error) { setStatus(error.message, 'error'); return; }
+      try { target = window.__sentinelNormalizeTarget(targetInput.value); targetInput.value = target; } catch (error) { setStatus(error.message, 'error'); return; }
       run.disabled = true;
-      setStatus('SCANNING / BOUNDED GET REQUESTS...', 'online');
+      cancel.disabled = true;
+      cancelling = false;
+      setStatus('STARTING / BOUNDED GET SCAN...', 'online');
       try {
-        const response = await fetch('/api/scan', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target, confirmAuthorized: true, ...(allowPrivate?.checked ? { allowPrivateNetwork: true } : {}), scope: { name: 'dashboard-scope', allowedOrigins: [new URL(target).origin] } }) });
-        const report = await response.json();
-        if (!response.ok) throw new Error(report.error || 'Scan failed.');
-        applyReport(report);
-        setStatus(`REAL REPORT / ${report.summary.findings} FINDINGS / ${report.summary.pagesScanned} PAGES`, 'online');
-      } catch (error) { setStatus(`SCAN ERROR / ${error.message}`, 'error'); } finally { run.disabled = false; }
+        const response = await fetch('/api/scans', { method: 'POST', headers: authHeaders(true), body: JSON.stringify({ target, confirmAuthorized: true, ...(allowPrivate?.checked ? { allowPrivateNetwork: true } : {}), scope: { name: 'dashboard-scope', allowedOrigins: [new URL(target).origin] } }) });
+        const started = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(started.error || 'Scan could not be started.');
+        if (!started.id) throw new Error('The dashboard did not return a scan job ID.');
+        activeJobId = started.id;
+        const location = started.location || `/api/scans/${encodeURIComponent(started.id)}`;
+        cancel.disabled = false;
+        let job;
+        do {
+          await wait(750);
+          const poll = await fetch(location, { cache: 'no-store', headers: authHeaders() });
+          job = await poll.json().catch(() => ({}));
+          if (!poll.ok) throw new Error(job.error || 'Could not read scan progress.');
+          if (typeof job.status !== 'string') throw new Error('The dashboard returned an invalid scan status.');
+          const progress = job.progress || {};
+          setStatus(`SCAN ${job.status.toUpperCase()} / ${String(progress.phase || 'waiting').toUpperCase()} / ${progress.requestsMade ?? 0} REQUESTS / ${progress.pagesScanned ?? 0} PAGES`, 'online');
+        } while (job.status === 'queued' || job.status === 'running');
+        if (job.status === 'complete' && job.report) {
+          applyReport(job.report);
+          const findingCount = job.report.summary?.findings ?? job.report.findings?.length ?? 0;
+          setStatus(`REAL REPORT / ${findingCount} FINDINGS / ${job.report.summary?.pagesScanned ?? 0} PAGES`, 'online');
+        } else if (job.status === 'canceled') {
+          setStatus('SCAN CANCELED / JOB STOPPED', 'online');
+        } else {
+          throw new Error(job.error || `Scan ended with status ${job.status}.`);
+        }
+      } catch (error) {
+        setStatus(`SCAN ERROR / ${error.message}`, 'error');
+      } finally {
+        activeJobId = null;
+        cancelling = false;
+        cancel.disabled = true;
+        run.disabled = !online;
+      }
+    });
+    cancel.addEventListener('click', async () => {
+      const jobId = activeJobId;
+      if (!jobId || cancelling) return;
+      cancelling = true;
+      cancel.disabled = true;
+      setStatus('SENDING CANCELLATION REQUEST...', 'online');
+      try {
+        const response = await fetch(`/api/scans/${encodeURIComponent(jobId)}`, { method: 'DELETE', headers: authHeaders(true) });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'Cancellation request failed.');
+        setStatus(`CANCEL REQUESTED / ${String(result.status || 'pending').toUpperCase()}`, 'online');
+      } catch (error) {
+        setStatus(`CANCEL ERROR / ${error.message}`, 'error');
+        if (activeJobId === jobId) cancel.disabled = false;
+      } finally {
+        cancelling = false;
+      }
     });
     checkRuntime();
     if (window.__initialRealReport) { applyReport(window.__initialRealReport); targetInput.value = window.__initialRealReport.target; setStatus('STATIC SNAPSHOT / START SERVER FOR LIVE SCANS', 'online'); }

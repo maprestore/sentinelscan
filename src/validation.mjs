@@ -1,8 +1,8 @@
 import { assertInScope, normalizeScope } from "./scope.mjs";
 import { getDetector } from "./detector-registry.mjs";
-import { normalizeAuthHeaderOrigins, normalizeAuthHeaders, normalizeEmailDomain, normalizeTarget } from "./scanner.mjs";
+import { MAX_SCAN_LIMITS, normalizeAuthHeaderOrigins, normalizeAuthHeaders, normalizeEmailDomain, normalizeTarget } from "./scanner.mjs";
 import { normalizeExitPolicy } from "./exit-policy.mjs";
-import { normalizeSuppressions } from "./triage.mjs";
+import { normalizeSuppressions, triageCounts } from "./triage.mjs";
 import { verifyIntegrity } from "./provenance.mjs";
 
 const CONFIG_KEYS = new Set([
@@ -10,17 +10,6 @@ const CONFIG_KEYS = new Set([
   "checkInfrastructure", "certificateTransparency", "allowPrivateNetwork", "rendered", "confirmRendered", "emailDomain",
   "dkimSelectors", "authHeaders", "authHeaderOrigins", "suppressions", "exitPolicy",
 ]);
-
-const CONFIG_LIMITS = Object.freeze({
-  maxPages: 500,
-  maxRedirects: 10,
-  maxResponseBytes: 10_000_000,
-  timeoutMs: 60_000,
-  delayMs: 60_000,
-  maxResources: 1_000,
-  maxRequests: 5_000,
-  maxElapsedMs: 900_000,
-});
 
 const SEVERITIES = new Set(["info", "low", "medium", "high"]);
 
@@ -104,15 +93,15 @@ function validateSuppressions(value, path = "suppressions") {
 export function validateConfig(value) {
   const config = object(value, "config");
   keys(config, CONFIG_KEYS, "config");
-  for (const [name, maximum] of Object.entries(CONFIG_LIMITS)) {
+  for (const [name, maximum] of Object.entries(MAX_SCAN_LIMITS)) {
     if (config[name] !== undefined) integer(config[name], `config.${name}`, name === "maxRedirects" || name === "delayMs" ? 0 : 1, maximum);
   }
   for (const name of ["checkInfrastructure", "certificateTransparency", "allowPrivateNetwork", "rendered", "confirmRendered"]) {
     if (config[name] !== undefined) boolean(config[name], `config.${name}`);
   }
   if (config.rendered && config.confirmRendered !== true) fail("config.confirmRendered", "must be true when rendered is enabled");
-  if (config.emailDomain !== undefined && typeof config.emailDomain !== "string") fail("config.emailDomain", "must be a hostname string");
-  if (config.emailDomain?.trim()) {
+  if (config.emailDomain !== undefined) {
+    if (typeof config.emailDomain !== "string") fail("config.emailDomain", "must be a hostname string");
     try { normalizeEmailDomain(config.emailDomain); } catch { fail("config.emailDomain", "must be a plain hostname"); }
   }
   if (config.dkimSelectors !== undefined) {
@@ -139,25 +128,43 @@ export function validateConfig(value) {
     }
     try { normalizeExitPolicy(config.exitPolicy); } catch { fail("config.exitPolicy", "contains an invalid exit policy"); }
   }
-  return { kind: "config", fields: Object.keys(config), limits: CONFIG_LIMITS };
+  return { kind: "config", fields: Object.keys(config), limits: MAX_SCAN_LIMITS };
 }
 
 function validateFinding(value, path) {
   object(value, path);
-  for (const field of ["id", "severity", "title", "evidence", "location", "remediation", "fingerprint"]) string(value[field], `${path}.${field}`);
+  for (const field of ["id", "severity", "title", "evidence", "location", "remediation", "fingerprint", "category", "confidence", "status"]) string(value[field], `${path}.${field}`);
   if (!SEVERITIES.has(value.severity)) fail(`${path}.severity`, "must be info, low, medium, or high");
   const detector = getDetector(value.id);
   if (!detector) fail(`${path}.id`, "is not in the detector catalog");
   if (detector.severity !== value.severity) fail(`${path}.severity`, "does not match the detector catalog");
+  if (typeof value.confidenceScore !== "number" || !Number.isFinite(value.confidenceScore) || value.confidenceScore < 0 || value.confidenceScore > 1) fail(`${path}.confidenceScore`, "must be a number from 0 to 1");
+  if (!["observed", "candidate"].includes(value.status)) fail(`${path}.status`, "must be observed or candidate");
+  timestamp(value.observedAt, `${path}.observedAt`);
   if (value.triage !== undefined) {
     object(value.triage, `${path}.triage`);
+    keys(value.triage, new Set(["state", "owner", "reason", "expiresAt", "suppressionExpired"]), `${path}.triage`);
     if (!["open", "suppressed"].includes(value.triage.state)) fail(`${path}.triage.state`, "must be open or suppressed");
+    if (value.triage.state === "suppressed") {
+      string(value.triage.reason, `${path}.triage.reason`);
+      timestamp(value.triage.expiresAt, `${path}.triage.expiresAt`);
+    }
+    if (value.triage.owner !== undefined) string(value.triage.owner, `${path}.triage.owner`);
+    if (value.triage.suppressionExpired !== undefined) boolean(value.triage.suppressionExpired, `${path}.triage.suppressionExpired`);
   }
+}
+
+function scopeIdentity(scope) {
+  return JSON.stringify({
+    allowedOrigins: [...(scope?.allowedOrigins || [])].sort(),
+    includePaths: [...(scope?.includePaths || [])].sort(),
+    excludePaths: [...(scope?.excludePaths || [])].sort(),
+  });
 }
 
 function validateReport(value) {
   const report = object(value, "report");
-  for (const field of ["schemaVersion", "scanner", "target", "scope", "startedAt", "finishedAt", "limits", "summary", "findings", "attackPaths", "risk"]) {
+  for (const field of ["schemaVersion", "scanner", "target", "scope", "startedAt", "finishedAt", "limits", "scanIdentity", "coverage", "summary", "pages", "resources", "requests", "infrastructure", "inventory", "findings", "suppressions", "attackPaths", "risk", "notes"]) {
     if (report[field] === undefined) fail(`report.${field}`, "is required");
   }
   if (report.schemaVersion !== 2) fail("report.schemaVersion", "must be 2");
@@ -169,26 +176,74 @@ function validateReport(value) {
   try { target = normalizeTarget(report.target).href; } catch { fail("report.target", "must be a clean http(s) URL"); }
   const scope = validateScope(report.scope);
   try { assertInScope(target, scope); } catch { fail("report.scope", "does not contain report.target"); }
+  if (target !== report.target) fail("report.target", "must use its normalized URL form");
   timestamp(report.startedAt, "report.startedAt");
   timestamp(report.finishedAt, "report.finishedAt");
-  object(report.limits, "report.limits");
+  if (Date.parse(report.finishedAt) < Date.parse(report.startedAt)) fail("report.finishedAt", "must not precede report.startedAt");
+  const limits = object(report.limits, "report.limits");
+  const limitKeys = new Set([...CONFIG_KEYS].filter((key) => key !== "exitPolicy"));
+  keys(limits, limitKeys, "report.limits");
+  for (const [name, maximum] of Object.entries(MAX_SCAN_LIMITS)) {
+    if (limits[name] !== undefined) integer(limits[name], `report.limits.${name}`, name === "maxRedirects" || name === "delayMs" ? 0 : 1, maximum);
+  }
+  for (const name of ["checkInfrastructure", "certificateTransparency", "allowPrivateNetwork", "rendered"]) {
+    if (limits[name] !== undefined) boolean(limits[name], `report.limits.${name}`);
+  }
+  if (limits.emailDomain !== undefined) {
+    if (typeof limits.emailDomain !== "string") fail("report.limits.emailDomain", "must be a hostname string");
+    try { normalizeEmailDomain(limits.emailDomain); } catch { fail("report.limits.emailDomain", "must be a plain hostname"); }
+  }
+  if (limits.authHeaderOrigins !== undefined) {
+    array(limits.authHeaderOrigins, "report.limits.authHeaderOrigins");
+    try { normalizeAuthHeaderOrigins(limits.authHeaderOrigins, target ? new URL(target).origin : ""); } catch { fail("report.limits.authHeaderOrigins", "contains an invalid origin"); }
+  }
+  if (limits.dkimSelectors !== undefined && (!Array.isArray(limits.dkimSelectors) || limits.dkimSelectors.length > 20 || limits.dkimSelectors.some((selector) => typeof selector !== "string" || !/^[A-Za-z0-9_-]{1,63}$/.test(selector)))) {
+    fail("report.limits.dkimSelectors", "must contain at most 20 simple selector names");
+  }
+  const identity = object(report.scanIdentity, "report.scanIdentity");
+  if (identity.algorithm !== "sha256" || typeof identity.value !== "string" || !/^[a-f0-9]{64}$/.test(identity.value)) fail("report.scanIdentity", "must contain a sha256 value");
+  const coverage = object(report.coverage, "report.coverage");
+  boolean(coverage.complete, "report.coverage.complete");
+  string(coverage.termination, "report.coverage.termination");
+  for (const field of ["pages", "resources", "requests", "deferred"]) integer(coverage[field], `report.coverage.${field}`);
+  if (coverage.complete !== (coverage.termination === "queue-exhausted")) fail("report.coverage", "complete must match the termination reason");
   const summary = object(report.summary, "report.summary");
-  for (const field of ["findings", "actionableFindings", "suppressedFindings"]) integer(summary[field], `report.summary.${field}`);
+  for (const field of ["pagesScanned", "resourcesScanned", "requestsMade", "elapsedMs", "findings", "actionableFindings", "suppressedFindings"]) integer(summary[field], `report.summary.${field}`);
+  string(summary.termination, "report.summary.termination");
   const findings = array(report.findings, "report.findings");
   findings.forEach((entry, index) => validateFinding(entry, `report.findings[${index}]`));
   if (summary.findings !== findings.length) fail("report.summary.findings", "must equal findings.length");
   if (summary.actionableFindings + summary.suppressedFindings !== findings.length) fail("report.summary", "actionableFindings plus suppressedFindings must equal findings.length");
-  array(report.attackPaths, "report.attackPaths");
-  object(report.risk, "report.risk");
+  const expectedTriage = triageCounts(findings);
+  if (summary.actionableFindings !== expectedTriage.actionableFindings || summary.suppressedFindings !== expectedTriage.suppressedFindings) fail("report.summary", "triage counts must match the findings");
+  if (summary.pagesScanned !== coverage.pages || summary.resourcesScanned !== coverage.resources || summary.requestsMade !== coverage.requests) fail("report.summary", "coverage counts must match the summary");
+  array(report.pages, "report.pages");
+  array(report.resources, "report.resources");
+  array(report.requests, "report.requests");
+  object(report.infrastructure, "report.infrastructure");
+  object(report.inventory, "report.inventory");
+  validateSuppressions(report.suppressions, "report.suppressions");
+  const paths = array(report.attackPaths, "report.attackPaths");
+  paths.forEach((path, index) => {
+    const pathLabel = `report.attackPaths[${index}]`;
+    object(path, pathLabel);
+    for (const field of ["id", "severity", "title", "whyItMatters", "nextAction"]) string(path[field], `${pathLabel}.${field}`);
+    if (!SEVERITIES.has(path.severity)) fail(`${pathLabel}.severity`, "must be info, low, medium, or high");
+    array(path.findingFingerprints, `${pathLabel}.findingFingerprints`);
+    path.findingFingerprints.forEach((fingerprint, position) => string(fingerprint, `${pathLabel}.findingFingerprints[${position}]`));
+  });
+  const risk = object(report.risk, "report.risk");
+  if (typeof risk.score !== "number" || !Number.isFinite(risk.score) || risk.score < 0 || risk.score > 100) fail("report.risk.score", "must be a number from 0 to 100");
+  if (!["A", "B", "C", "D", "F"].includes(risk.grade)) fail("report.risk.grade", "must be A, B, C, D, or F");
+  string(risk.method, "report.risk.method");
+  array(risk.contributions, "report.risk.contributions");
+  array(risk.priority, "report.risk.priority");
+  array(report.notes, "report.notes");
+  report.notes.forEach((note, index) => string(note, `report.notes[${index}]`));
   const warnings = [];
   if (report.integrity !== undefined) {
     if (!verifyIntegrity(report)) fail("report.integrity", "content hash does not match the report");
   } else warnings.push("Report has no integrity hash.");
-  if (report.scanIdentity !== undefined && (report.scanIdentity.algorithm !== "sha256" || typeof report.scanIdentity.value !== "string")) fail("report.scanIdentity", "must contain a sha256 value");
-  if (report.coverage !== undefined) {
-    object(report.coverage, "report.coverage");
-    boolean(report.coverage.complete, "report.coverage.complete");
-  }
   return { kind: "report", target, findings: findings.length, actionableFindings: summary.actionableFindings, suppressedFindings: summary.suppressedFindings, integrity: report.integrity ? "verified" : "missing", warnings };
 }
 
@@ -204,11 +259,30 @@ function validateCheckpoint(value) {
   for (const field of ["queued", "deferred", "visited", "findings", "pages", "resources", "requestLog", "inventoryPages", "inventoryClientApiEndpoints", "inventorySourceMaps"]) {
     if (checkpoint[field] !== undefined) array(checkpoint[field], `checkpoint.${field}`);
   }
-  if (checkpoint.elapsedMs !== undefined) integer(checkpoint.elapsedMs, "checkpoint.elapsedMs");
-  if (checkpoint.requestCount !== undefined) integer(checkpoint.requestCount, "checkpoint.requestCount");
+  if (checkpoint.elapsedMs !== undefined) integer(checkpoint.elapsedMs, "checkpoint.elapsedMs", 0, MAX_SCAN_LIMITS.maxElapsedMs);
+  if (checkpoint.requestCount !== undefined) integer(checkpoint.requestCount, "checkpoint.requestCount", 0, MAX_SCAN_LIMITS.maxRequests);
+  if (checkpoint.wellKnownIndex !== undefined) integer(checkpoint.wellKnownIndex, "checkpoint.wellKnownIndex", 0, 9);
+  for (const [field, entries] of [["queued", checkpoint.queued], ["deferred", checkpoint.deferred]]) {
+    for (const [index, entry] of (entries || []).entries()) {
+      const entryPath = `checkpoint.${field}[${index}]`;
+      const urlValue = typeof entry === "string" ? entry : object(entry, entryPath).url;
+      if (typeof urlValue !== "string" || !urlValue) fail(entryPath, "must contain a URL");
+      let normalized;
+      try { normalized = normalizeTarget(urlValue).href; } catch { fail(`${entryPath}.url`, "must be a clean http(s) URL"); }
+      try { assertInScope(normalized, scope); } catch { fail(`${entryPath}.url`, "must be inside checkpoint.scope"); }
+      if (typeof entry === "object" && entry.kind !== undefined && !["page", "resource", "unknown"].includes(entry.kind)) fail(`${entryPath}.kind`, "is not supported");
+    }
+  }
+  for (const [index, urlValue] of (checkpoint.visited || []).entries()) {
+    let normalized;
+    try { normalized = normalizeTarget(urlValue).href; } catch { fail(`checkpoint.visited[${index}]`, "must be a clean http(s) URL"); }
+    try { assertInScope(normalized, scope); } catch { fail(`checkpoint.visited[${index}]`, "must be inside checkpoint.scope"); }
+  }
+  (checkpoint.findings || []).forEach((finding, index) => validateFinding(finding, `checkpoint.findings[${index}]`));
   if (checkpoint.status === "complete") {
     if (!checkpoint.report) fail("checkpoint.report", "is required for a complete checkpoint");
     validateReport(checkpoint.report);
+    if (checkpoint.report.target !== target || scopeIdentity(checkpoint.report.scope) !== scopeIdentity(scope)) fail("checkpoint.report", "must match the checkpoint target and scope");
   }
   const warnings = [];
   if (checkpoint.integrity !== undefined) {

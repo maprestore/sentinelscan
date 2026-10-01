@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmod, rename, writeFile } from "node:fs/promises";
-import { assertInScope, normalizeScope } from "./scope.mjs";
+import { assertInScope, assertOriginInScope, normalizeScope } from "./scope.mjs";
 import { inspectInfrastructure } from "./infrastructure.mjs";
 import { buildAttackPaths, calculateRisk, DEFAULT_ATTACK_PATH_RULES } from "./risk.mjs";
 import { fetchWithNetworkPolicy } from "./network-policy.mjs";
@@ -8,8 +7,20 @@ import { DETECTOR_CATALOG, getDetector } from "./detector-registry.mjs";
 import { actionableFindings, applyTriage, normalizeSuppressions, triageCounts } from "./triage.mjs";
 import { fetchRendered } from "./browser-renderer.mjs";
 import { addIntegrity, buildScanIdentity, verifyIntegrity } from "./provenance.mjs";
+import { writePrivateFileAtomic } from "./private-file.mjs";
 
-const DEFAULTS = {
+export const MAX_SCAN_LIMITS = Object.freeze({
+  maxPages: 500,
+  maxRedirects: 10,
+  maxResponseBytes: 10_000_000,
+  timeoutMs: 60_000,
+  delayMs: 60_000,
+  maxResources: 1_000,
+  maxRequests: 5_000,
+  maxElapsedMs: 900_000,
+});
+
+const DEFAULTS = Object.freeze({
   maxPages: 20,
   maxRedirects: 5,
   maxResponseBytes: 1_000_000,
@@ -21,10 +32,9 @@ const DEFAULTS = {
   checkInfrastructure: false,
   certificateTransparency: false,
   allowPrivateNetwork: false,
-  suppressions: [],
   rendered: false,
   confirmRendered: false,
-};
+});
 
 export class ScanBudgetError extends Error {
   constructor(message) {
@@ -128,7 +138,7 @@ function decodeRepeated(value) {
   return current;
 }
 
-function redactText(value) {
+export function redactText(value) {
   let text = String(value ?? "");
   text = text.replace(/\bhttps?:\/\/[^\s<>"']+/gi, (candidate) => {
     const suffix = candidate.match(/[),.;!?]+$/)?.[0] || "";
@@ -181,6 +191,7 @@ async function readBody(response, maxBytes, signal) {
     while (true) {
       if (signal?.aborted) throw signal.reason || new DOMException("The scan was canceled.", "AbortError");
       const { done, value } = await reader.read();
+      if (signal?.aborted) throw abortError(signal);
       if (done) break;
       total += value.byteLength;
       if (total > maxBytes) {
@@ -466,11 +477,11 @@ function addHeaderFindings(findings, headers, url) {
   if (headerValue(headers, "access-control-allow-origin") === "*" && /true/i.test(headerValue(headers, "access-control-allow-credentials"))) {
     findings.push(finding(
       "cors-wildcard-with-credentials",
-      "high",
-      "CORS allows credentials with a wildcard origin",
-      "Access-Control-Allow-Origin is * while Access-Control-Allow-Credentials is true.",
+      "info",
+      "CORS credential flag is ignored with a wildcard origin",
+      "Browsers reject credentialed CORS responses when Access-Control-Allow-Origin is *, so this combination does not grant credentialed cross-origin access.",
       url,
-      "Allow only explicit trusted origins and review whether credentialed cross-origin access is required.",
+      "If credentialed cross-origin access is required, return an explicit trusted origin; otherwise confirm the endpoint is intentionally public.",
     ));
   }
 }
@@ -525,6 +536,10 @@ function extractAttributeTags(html, tagName) {
 function attribute(tag, name) {
   const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'=<>\`]+))`, "i"));
   return (match?.[1] ?? match?.[2] ?? match?.[3] ?? "").trim();
+}
+
+function hasAttribute(tag, name) {
+  return new RegExp(`\\s${name}(?=\\s|=|/?>)`, "i").test(tag);
 }
 
 function extractFormBlocks(html) {
@@ -619,7 +634,7 @@ function addHtmlFindings(findings, html, pageUrl, rootOrigin) {
     if (!source) continue;
     try {
       const frameUrl = new URL(source, pageUrl);
-      if (frameUrl.origin !== new URL(pageUrl).origin && !attribute(iframe, "sandbox")) {
+      if (frameUrl.origin !== new URL(pageUrl).origin && !hasAttribute(iframe, "sandbox")) {
         findings.push(finding(
           "cross-origin-iframe-without-sandbox",
           "low",
@@ -984,11 +999,8 @@ async function checkWellKnownPaths(rootUrl, options, findings, controls = {}) {
 
 async function writeCheckpoint(path, state) {
   if (!path) return;
-  const temporaryPath = `${path}.${process.pid}.tmp`;
   const checkpoint = addIntegrity({ schemaVersion: 2, ...state });
-  await writeFile(temporaryPath, `${JSON.stringify(checkpoint, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  await rename(temporaryPath, path);
-  await chmod(path, 0o600);
+  await writePrivateFileAtomic(path, `${JSON.stringify(checkpoint, null, 2)}\n`);
 }
 
 function isInScope(value, scope) {
@@ -1019,7 +1031,7 @@ export function normalizeEmailDomain(value) {
   return parsed.hostname;
 }
 
-function normalizeScanOptions(overrides, scope) {
+function normalizeScanOptions(overrides, scope, root) {
   const options = { ...DEFAULTS, scope, authHeaders: normalizeAuthHeaders(overrides.authHeaders) };
   for (const name of [
     "maxPages", "maxRedirects", "maxResponseBytes", "timeoutMs", "delayMs", "maxResources", "maxRequests", "maxElapsedMs",
@@ -1029,7 +1041,9 @@ function normalizeScanOptions(overrides, scope) {
     if (overrides[name] !== undefined) options[name] = overrides[name];
   }
   for (const [name, minimum] of [["maxPages", 1], ["maxResources", 1], ["maxRequests", 1], ["maxResponseBytes", 1], ["timeoutMs", 1], ["maxElapsedMs", 1], ["delayMs", 0], ["maxRedirects", 0]]) {
-    if (!Number.isInteger(options[name]) || options[name] < minimum) throw new Error(`${name} must be an integer >= ${minimum}.`);
+    if (!Number.isInteger(options[name]) || options[name] < minimum || options[name] > MAX_SCAN_LIMITS[name]) {
+      throw new Error(`${name} must be an integer from ${minimum} to ${MAX_SCAN_LIMITS[name]}.`);
+    }
   }
   for (const name of ["checkInfrastructure", "certificateTransparency"]) {
     if (typeof options[name] !== "boolean") throw new Error(`${name} must be a boolean.`);
@@ -1040,6 +1054,17 @@ function normalizeScanOptions(overrides, scope) {
   options.suppressions = normalizeSuppressions(options.suppressions);
   if (options.certificateTransparency) options.checkInfrastructure = true;
   options.emailDomain = normalizeEmailDomain(options.emailDomain);
+  if (options.checkInfrastructure && options.emailDomain && options.emailDomain !== root.hostname) {
+    const inScope = ["https:", "http:"].some((protocol) => {
+      try {
+        assertOriginInScope(`${protocol}//${options.emailDomain}/`, scope);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    if (!inScope) throw new Error("emailDomain must be included in the explicit scan scope before infrastructure DNS checks are enabled.");
+  }
   if (options.dkimSelectors !== undefined) {
     if (!Array.isArray(options.dkimSelectors) || options.dkimSelectors.length > 20 || options.dkimSelectors.some((selector) => typeof selector !== "string" || !/^[A-Za-z0-9_-]{1,63}$/.test(selector))) {
       throw new Error("dkimSelectors must contain at most 20 simple selector names.");
@@ -1054,7 +1079,7 @@ export function normalizeAuthHeaderOrigins(value, rootOrigin) {
   if (!Array.isArray(origins) || origins.length === 0) throw new Error("authHeaderOrigins must be a non-empty array when provided.");
   return [...new Set(origins.map((origin) => {
     const url = new URL(origin);
-    if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error(`Auth header origin must be a clean http(s) origin: ${origin}`);
+    if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("Auth header origins must be clean http(s) origins.");
     return url.origin;
   }))];
 }
@@ -1067,7 +1092,7 @@ function scopeIdentity(scope) {
   });
 }
 
-function validateResume(resume, root, scope) {
+function validateResume(resume, root, scope, options) {
   if (resume === undefined) return;
   if (!resume || typeof resume !== "object" || resume.schemaVersion !== 2 || !resume.status) throw new Error("Checkpoint must be a schemaVersion 2 object with a status.");
   if (resume.integrity !== undefined && !verifyIntegrity(resume)) throw new Error("Checkpoint integrity hash does not match the supplied file.");
@@ -1079,6 +1104,15 @@ function validateResume(resume, root, scope) {
   }
   if (resume.requestCount !== undefined && (!Number.isInteger(resume.requestCount) || resume.requestCount < 0)) {
     throw new Error("Checkpoint requestCount must be a non-negative integer.");
+  }
+  if (resume.status === "in-progress") {
+    const requestCount = resume.requestCount ?? resume.requestLog?.length ?? 0;
+    if (requestCount > options.maxRequests || requestCount > MAX_SCAN_LIMITS.maxRequests) {
+      throw new Error("Checkpoint requestCount exceeds the configured scan request budget.");
+    }
+    if ((resume.elapsedMs ?? 0) > options.maxElapsedMs) throw new Error("Checkpoint elapsedMs exceeds the configured scan duration budget.");
+    if ((resume.pages?.length || 0) > options.maxPages) throw new Error("Checkpoint pages exceed the configured page budget.");
+    if ((resume.resources?.length || 0) > options.maxResources) throw new Error("Checkpoint resources exceed the configured resource budget.");
   }
   if (resume.wellKnownIndex !== undefined && (!Number.isInteger(resume.wellKnownIndex) || resume.wellKnownIndex < 0 || resume.wellKnownIndex > 9)) {
     throw new Error("Checkpoint wellKnownIndex must be an integer from 0 to 9.");
@@ -1094,14 +1128,15 @@ function validateResume(resume, root, scope) {
 }
 
 export async function scan(target, overrides = {}) {
+  if (!overrides || typeof overrides !== "object" || Array.isArray(overrides)) throw new Error("Scan options must be an object.");
   if (overrides.confirmAuthorized !== true) throw new Error("Refusing to scan without explicit authorization confirmation.");
   const root = normalizeTarget(target);
   const scope = normalizeScope(overrides.scope || { allowedOrigins: [root.origin] });
   assertInScope(root.href, scope);
-  const options = normalizeScanOptions(overrides, scope);
+  const options = normalizeScanOptions(overrides, scope, root);
   options.authHeaderOrigins = normalizeAuthHeaderOrigins(overrides.authHeaderOrigins, root.origin);
   const resume = overrides.resume;
-  validateResume(resume, root, scope);
+  validateResume(resume, root, scope, options);
   if (resume?.status === "complete") return resume.report;
   const startedAt = resume?.startedAt || new Date().toISOString();
   const findings = [...(resume?.findings || [])];

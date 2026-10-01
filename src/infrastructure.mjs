@@ -1,4 +1,4 @@
-import { lookup, resolveCaa, resolveTxt } from "node:dns/promises";
+import { Resolver } from "node:dns/promises";
 import { isIP } from "node:net";
 import tls from "node:tls";
 import { fetchWithNetworkPolicy, isPrivateAddress } from "./network-policy.mjs";
@@ -21,7 +21,7 @@ function assertActive(options) {
   if (options.remainingMs && options.remainingMs() <= 0) throw controlError("Maximum scan duration reached.");
 }
 
-async function runExternal(options, operation) {
+async function runExternal(options, operation, cancel) {
   assertActive(options);
   await options.beforeRequest?.();
   let timer;
@@ -31,15 +31,25 @@ async function runExternal(options, operation) {
     assertActive(options);
     const operationPromise = Promise.resolve().then(operation);
     const waits = [operationPromise];
-    if (remaining !== undefined && Number.isFinite(remaining)) {
+    const operationTimeout = Math.min(
+      Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 8_000,
+      Number.isFinite(remaining) ? remaining : Number.POSITIVE_INFINITY,
+    );
+    if (Number.isFinite(operationTimeout)) {
       waits.push(new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("Infrastructure operation timed out.")), Math.max(1, remaining));
+        timer = setTimeout(() => {
+          cancel?.();
+          reject(new Error("Infrastructure operation timed out."));
+        }, Math.max(1, operationTimeout));
       }));
     }
     if (options.signal) {
       const abortPromise = new Promise((_, reject) => {
-        onAbort = () => reject(abortError(options.signal));
-        if (options.signal.aborted) reject(abortError(options.signal));
+        onAbort = () => {
+          cancel?.();
+          reject(abortError(options.signal));
+        };
+        if (options.signal.aborted) onAbort();
         else options.signal.addEventListener("abort", onAbort, { once: true });
       });
       waits.push(abortPromise);
@@ -62,6 +72,21 @@ function isLocalHost(host) {
 
 function flattenTxt(records) {
   return records.map((record) => record.join(""));
+}
+
+async function runDns(options, operation) {
+  const resolver = new Resolver();
+  return runExternal(options, () => operation(resolver), () => resolver.cancel());
+}
+
+async function optionalDns(options, operation) {
+  try {
+    return { records: await runDns(options, operation), error: "" };
+  } catch (error) {
+    if (error.code === INFRASTRUCTURE_BUDGET_CODE || error.name === "AbortError") throw error;
+    if (["ENODATA", "ENOTFOUND"].includes(error.code)) return { records: [], error: "" };
+    return { records: [], error: error.message };
+  }
 }
 
 function queryTls(url, timeoutMs, signal, resolvedAddress) {
@@ -117,7 +142,18 @@ function queryTls(url, timeoutMs, signal, resolvedAddress) {
 async function queryDns(host, options) {
   const result = { addresses: [], error: "" };
   try {
-    result.addresses = (await runExternal(options, () => lookup(host, { all: true, verbatim: true }))).map((entry) => entry.address);
+    result.addresses = await runDns(options, async (resolver) => {
+      const results = await Promise.allSettled([resolver.resolve4(host), resolver.resolve6(host)]);
+      const addresses = [];
+      const errors = [];
+      for (const entry of results) {
+        if (entry.status === "fulfilled") addresses.push(...entry.value);
+        else if (!entry.reason || !["ENODATA", "ENOTFOUND"].includes(entry.reason.code)) errors.push(entry.reason);
+      }
+      if (addresses.length) return [...new Set(addresses)];
+      if (errors.length) throw errors[0];
+      throw results.find((entry) => entry.status === "rejected")?.reason || new Error(`No DNS addresses were found for ${host}.`);
+    });
   } catch (error) {
     if (error.code === INFRASTRUCTURE_BUDGET_CODE || error.name === "AbortError") throw error;
     result.error = error.message;
@@ -126,28 +162,34 @@ async function queryDns(host, options) {
 }
 
 async function queryEmailDns(domain, selectors, options) {
-  const email = { domain, spf: [], dmarc: [], caa: [], dkim: {} };
-  try { email.spf = flattenTxt(await runExternal(options, () => resolveTxt(domain))).filter((item) => /^v=spf1\b/i.test(item)); } catch (error) {
-    if (error.code === INFRASTRUCTURE_BUDGET_CODE || error.name === "AbortError") throw error;
-  }
-  try { email.dmarc = flattenTxt(await runExternal(options, () => resolveTxt(`_dmarc.${domain}`))).filter((item) => /^v=dmarc1\b/i.test(item)); } catch (error) {
-    if (error.code === INFRASTRUCTURE_BUDGET_CODE || error.name === "AbortError") throw error;
-  }
-  try { email.caa = (await runExternal(options, () => resolveCaa(domain))).map((record) => ({ flags: record.critical || 0, tag: record.issue || record.tag || "", value: record.value || "" })); } catch (error) {
-    if (error.code === INFRASTRUCTURE_BUDGET_CODE || error.name === "AbortError") throw error;
-  }
+  const email = { domain, spf: [], dmarc: [], caa: [], dkim: {}, errors: {} };
+  const spf = await optionalDns(options, (resolver) => resolver.resolveTxt(domain));
+  email.spf = flattenTxt(spf.records).filter((item) => /^v=spf1\b/i.test(item));
+  if (spf.error) email.errors.spf = spf.error;
+  const dmarc = await optionalDns(options, (resolver) => resolver.resolveTxt(`_dmarc.${domain}`));
+  email.dmarc = flattenTxt(dmarc.records).filter((item) => /^v=dmarc1\b/i.test(item));
+  if (dmarc.error) email.errors.dmarc = dmarc.error;
   for (const selector of selectors) {
-    try {
-      const records = flattenTxt(await runExternal(options, () => resolveTxt(`${selector}._domainkey.${domain}`)));
-      if (records.length) email.dkim[selector] = records;
-    } catch (error) {
-      if (error.code === INFRASTRUCTURE_BUDGET_CODE || error.name === "AbortError") throw error;
-    }
+    const result = await optionalDns(options, (resolver) => resolver.resolveTxt(`${selector}._domainkey.${domain}`));
+    const records = flattenTxt(result.records);
+    if (records.length) email.dkim[selector] = records;
+    if (result.error) email.errors[`dkim:${selector}`] = result.error;
   }
   return email;
 }
 
-async function queryCertificateTransparency(host, timeoutMs, signal, allowPrivateNetwork) {
+async function queryCaa(host, options) {
+  const result = await optionalDns(options, (resolver) => resolver.resolveCaa(host));
+  const records = [];
+  for (const record of result.records) {
+    for (const tag of ["issue", "issuewild", "iodef"]) {
+      if (record[tag]) records.push({ flags: record.critical || 0, tag, value: record[tag] });
+    }
+  }
+  return { host, records, error: result.error };
+}
+
+async function queryCertificateTransparency(host, timeoutMs, signal) {
   const controller = new AbortController();
   const abortParent = () => controller.abort(abortError(signal));
   const timeout = setTimeout(() => controller.abort(new DOMException("Certificate Transparency lookup timed out.", "AbortError")), timeoutMs);
@@ -160,7 +202,7 @@ async function queryCertificateTransparency(host, timeoutMs, signal, allowPrivat
       headers: { accept: "application/json", "user-agent": "SentinelScan/0.5 (authorized security posture audit)" },
       signal: controller.signal,
       timeoutMs,
-      allowPrivateNetwork,
+      allowPrivateNetwork: false,
     });
     if (!response.ok) return { error: `Certificate Transparency returned HTTP ${response.status}.`, certificates: [] };
     const contentLength = Number(response.headers.get("content-length") || 0);
@@ -235,12 +277,16 @@ export async function inspectInfrastructure(target, options = {}) {
 
   const domain = options.emailDomain || url.hostname;
   metadata.email = await queryEmailDns(domain, options.dkimSelectors || COMMON_DKIM_SELECTORS, options);
-  if (!metadata.email.spf.length) findings.push({ id: "missing-spf", severity: "low", title: "SPF record was not observed", evidence: `No v=spf1 TXT record was found for ${domain}.`, location: target, remediation: "Publish an SPF policy if this domain sends email, and keep it within provider lookup limits." });
-  if (!metadata.email.dmarc.length) findings.push({ id: "missing-dmarc", severity: "low", title: "DMARC record was not observed", evidence: `No v=DMARC1 TXT record was found for _dmarc.${domain}.`, location: target, remediation: "Publish a monitored DMARC policy for the domain's email-sending identity." });
-  if (!metadata.email.caa.length) findings.push({ id: "missing-caa", severity: "info", title: "CAA record was not observed", evidence: `No CAA record was found for ${domain}.`, location: target, remediation: "Consider restricting certificate issuance with a CAA policy when operationally appropriate." });
+  const caa = await queryCaa(url.hostname, options);
+  metadata.email.caaDomain = caa.host;
+  metadata.email.caa = caa.records;
+  if (caa.error) metadata.email.errors.caa = caa.error;
+  if (!metadata.email.spf.length && !metadata.email.errors.spf) findings.push({ id: "missing-spf", severity: "low", title: "SPF record was not observed", evidence: `No v=spf1 TXT record was found for ${domain}.`, location: target, remediation: "Publish an SPF policy if this domain sends email, and keep it within provider lookup limits." });
+  if (!metadata.email.dmarc.length && !metadata.email.errors.dmarc) findings.push({ id: "missing-dmarc", severity: "low", title: "DMARC record was not observed", evidence: `No v=DMARC1 TXT record was found for _dmarc.${domain}.`, location: target, remediation: "Publish a monitored DMARC policy for the domain's email-sending identity." });
+  if (!metadata.email.caa.length && !metadata.email.errors.caa) findings.push({ id: "missing-caa", severity: "info", title: "CAA record was not observed", evidence: `No CAA record was found for ${url.hostname}.`, location: target, remediation: "Consider restricting certificate issuance with a CAA policy when operationally appropriate." });
 
   if (options.certificateTransparency) {
-    metadata.certificateTransparency = await runExternal(options, () => queryCertificateTransparency(url.hostname, Math.min(options.timeoutMs || 8_000, options.remainingMs?.() || options.timeoutMs || 8_000), options.signal, options.allowPrivateNetwork));
+    metadata.certificateTransparency = await runExternal(options, () => queryCertificateTransparency(url.hostname, Math.min(options.timeoutMs || 8_000, options.remainingMs?.() || options.timeoutMs || 8_000), options.signal));
     if (!metadata.certificateTransparency.certificates.length && !metadata.certificateTransparency.error) {
       findings.push({ id: "ct-no-certificates", severity: "info", title: "No Certificate Transparency entries were returned", evidence: `crt.sh returned no entries for ${url.hostname}.`, location: target, remediation: "Confirm the hostname and review your certificate inventory through the issuing CA if this is unexpected." });
     }

@@ -58,7 +58,20 @@ Every run is bounded by independent limits. Exhausting any of them stops the sca
 | `--delay-ms <n>` | 250 | Minimum pause between **any** two requests: crawl, redirect hops, well-known paths, and infrastructure operations (`0` disables it) |
 | `--allow-private-network` | off | Explicit opt-in for loopback/private fixtures. Public scans remain fail-closed when DNS resolves to a non-public address. |
 
-All values must be integers: positive for limits, non-negative for the delay. The redirect limit (5 hops) can be changed only through `maxRedirects` in a [config file](#config-file).
+The defaults are intentionally lower than the enforced CLI/config ceilings:
+
+| Budget | Maximum |
+| --- | ---: |
+| HTML pages | 500 |
+| Redirect hops | 10 |
+| Response body | 10,000,000 bytes |
+| Per-request timeout | 60,000 ms |
+| Pause between requests | 60,000 ms |
+| JS/JSON resources | 1,000 |
+| Total requests | 5,000 |
+| Wall-clock time | 900,000 ms |
+
+All values must be integers. Limits must be positive, except `maxRedirects` and `delayMs`, which may be zero. The redirect limit can be changed only through `maxRedirects` in a [config file](#config-file). The dashboard API uses lower ceilings described in its [API reference](API.md#request-body).
 
 ## Authenticated observation
 
@@ -84,7 +97,7 @@ Opt-in passive DNS, TLS, and email-policy metadata.
 | `--certificate-transparency` | Also query Certificate Transparency. Implies `--infrastructure` |
 
 > [!WARNING]
-> `--certificate-transparency` sends the target hostname to the public **crt.sh** service. `--email-domain` is not limited by your origin scope. See [Safety](SAFETY.md#third-party-and-non-http-lookups).
+> `--certificate-transparency` sends the target hostname to the public **crt.sh** service. If `--email-domain` differs from the target hostname, its hostname must also be included in the written scope. See [Safety](SAFETY.md#third-party-and-non-http-lookups).
 
 ## Checkpoints and baselines
 

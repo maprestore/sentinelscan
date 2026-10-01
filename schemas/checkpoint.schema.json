@@ -7,19 +7,50 @@
   "properties": {
     "schemaVersion": { "const": 2 },
     "status": { "enum": ["in-progress", "complete"] },
-    "target": { "type": "string", "format": "uri" },
+    "target": { "type": "string", "format": "uri", "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://" },
     "scope": { "$ref": "scope.schema.json" },
     "startedAt": { "type": "string", "format": "date-time" },
     "finishedAt": { "type": "string", "format": "date-time" },
-    "elapsedMs": { "type": "integer", "minimum": 0 },
-    "requestCount": { "type": "integer", "minimum": 0 },
+    "elapsedMs": { "type": "integer", "minimum": 0, "maximum": 900000 },
+    "requestCount": { "type": "integer", "minimum": 0, "maximum": 5000 },
     "wellKnownIndex": { "type": "integer", "minimum": 0, "maximum": 9 },
-    "queued": { "type": "array" },
-    "deferred": { "type": "array" },
-    "visited": { "type": "array", "items": { "type": "string" } },
+    "queued": { "$ref": "#/$defs/queue" },
+    "deferred": { "$ref": "#/$defs/queue" },
+    "visited": { "type": "array", "items": { "type": "string", "format": "uri", "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://" } },
+    "pages": { "type": "array" },
+    "resources": { "type": "array" },
+    "requestLog": { "type": "array" },
+    "inventoryPages": { "type": "array" },
+    "inventoryClientApiEndpoints": { "type": "array", "items": { "type": "string" } },
+    "inventorySourceMaps": { "type": "array", "items": { "type": "string" } },
+    "stopReason": { "type": "string" },
     "findings": { "type": "array", "items": { "$ref": "finding.schema.json" } },
     "integrity": { "type": "object", "required": ["algorithm", "contentHash"], "properties": { "algorithm": { "const": "sha256" }, "contentHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }, "additionalProperties": false },
     "report": { "$ref": "report.schema.json" }
   },
+  "$defs": {
+    "queue": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "string", "format": "uri", "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://" },
+          {
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+              "url": { "type": "string", "format": "uri", "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://" },
+              "kind": { "enum": ["page", "resource", "unknown"] }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] },
+      "then": { "required": ["report"] }
+    }
+  ],
   "additionalProperties": true
 }

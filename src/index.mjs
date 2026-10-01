@@ -1,4 +1,4 @@
-export { DEFAULTS, ScanBudgetError, normalizeAuthHeaderOrigins, normalizeAuthHeaders, normalizeEmailDomain, normalizeTarget, redactUrl, scan } from "./scanner.mjs";
+export { DEFAULTS, MAX_SCAN_LIMITS, ScanBudgetError, normalizeAuthHeaderOrigins, normalizeAuthHeaders, normalizeEmailDomain, normalizeTarget, redactUrl, scan } from "./scanner.mjs";
 export { compareReports } from "./baseline.mjs";
 export { toHtml } from "./html.mjs";
 export { toSarif } from "./sarif.mjs";

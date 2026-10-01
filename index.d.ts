@@ -42,7 +42,7 @@ export interface Finding {
   triage?: FindingTriage;
 }
 
-export interface ScanLimits {
+export interface ScanHardLimits {
   maxPages: number;
   maxRedirects: number;
   maxResponseBytes: number;
@@ -51,10 +51,20 @@ export interface ScanLimits {
   maxResources: number;
   maxRequests: number;
   maxElapsedMs: number;
+}
+
+export interface ScanLimits extends ScanHardLimits {
   checkInfrastructure: boolean;
   certificateTransparency: boolean;
   allowPrivateNetwork: boolean;
   rendered: boolean;
+  emailDomain?: string;
+  dkimSelectors?: string[];
+  authHeaderOrigins?: string[];
+}
+
+export interface ScanDefaults extends ScanLimits {
+  confirmRendered: boolean;
 }
 
 export interface ScanProgress {
@@ -124,7 +134,21 @@ export interface ScanReport {
   scanIdentity: ScanIdentity;
   coverage: ScanCoverage;
   integrity: ReportIntegrity;
-  summary: Record<string, unknown> & { findings: number; actionableFindings: number; suppressedFindings: number };
+  summary: Record<string, unknown> & {
+    pagesScanned: number;
+    resourcesScanned: number;
+    requestsMade: number;
+    elapsedMs: number;
+    termination: string;
+    findings: number;
+    actionableFindings: number;
+    suppressedFindings: number;
+    bySeverity: Record<string, number>;
+    byConfidence: Record<string, number>;
+    attackPaths: number;
+    riskScore: number;
+    riskGrade: string;
+  };
   pages: unknown[];
   resources: unknown[];
   requests: unknown[];
@@ -172,7 +196,8 @@ export interface ValidationResult {
   [key: string]: unknown;
 }
 
-export declare const DEFAULTS: Readonly<ScanLimits>;
+export declare const DEFAULTS: Readonly<ScanDefaults>;
+export declare const MAX_SCAN_LIMITS: Readonly<ScanHardLimits>;
 export declare class ScanBudgetError extends Error { code: "SCAN_BUDGET_EXHAUSTED"; }
 export declare function scan(target: string, options: ScanOptions): Promise<ScanReport>;
 export declare function normalizeTarget(value: string): URL;

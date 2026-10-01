@@ -39,6 +39,7 @@ test("scope matching decodes paths and keeps exact placeholder hosts exact", () 
   const wildcard = normalizeScope({ allowedOrigins: ["https://*.example.test"] });
   assertInScope("https://app.example.test/", wildcard);
   assert.throws(() => assertInScope("https://example.test/", wildcard), /Out-of-scope/);
+  assert.throws(() => normalizeScope({ allowedOrigins: ["https://*."] }), /wildcard/);
 });
 
 test("target and report URL handling removes nested credentials and fragments", () => {
@@ -143,6 +144,19 @@ test("unknown scan options do not enter report limits", async (t) => {
   assert.doesNotMatch(JSON.stringify(report), /should-not-appear/);
 });
 
+test("custom infrastructure email domains must be explicitly included in scope", async () => {
+  await assert.rejects(
+    () => scan("http://127.0.0.1:9/", {
+      confirmAuthorized: true,
+      allowPrivateNetwork: true,
+      checkInfrastructure: true,
+      emailDomain: "outside.example",
+      scope: { allowedOrigins: ["http://127.0.0.1:9"] },
+    }),
+    /emailDomain must be included in the explicit scan scope/,
+  );
+});
+
 test("budget-stopped checkpoints preserve deferred work for a later resume", async (t) => {
   const server = await startSite((request, response) => {
     response.writeHead(200, { "content-type": "text/html" });
@@ -238,6 +252,21 @@ test("resume checkpoints validate request counters before continuing", async () 
       },
     }),
     /requestCount must be a non-negative integer/,
+  );
+  await assert.rejects(
+    () => scan("https://example.test/", {
+      confirmAuthorized: true,
+      maxRequests: 10,
+      scope: { allowedOrigins: ["https://example.test"] },
+      resume: {
+        schemaVersion: 2,
+        status: "in-progress",
+        target: "https://example.test/",
+        scope: { allowedOrigins: ["https://example.test"] },
+        requestCount: 11,
+      },
+    }),
+    /requestCount exceeds the configured scan request budget/,
   );
 });
 

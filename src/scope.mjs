@@ -18,18 +18,23 @@ export function normalizeScope(value) {
 
 export function assertInScope(value, scope) {
   const url = new URL(value);
-  if (!/^https?:$/.test(url.protocol) || url.username || url.password) {
-    throw new Error("Only clean http(s) URLs without embedded credentials may be scanned.");
-  }
-  if (!scope.allowedOrigins.some((pattern) => originMatches(url, pattern))) {
-    throw new Error(`Out-of-scope navigation blocked: ${url.origin}. Allowed origins: ${scope.allowedOrigins.join(", ")}`);
-  }
+  assertOriginInScope(url.href, scope);
   const pathnames = decodedPathnames(url);
   if (scope.includePaths?.length && !pathnames.some((pathname) => scope.includePaths.some((path) => pathMatches(pathname, path)))) {
     throw new Error(`Out-of-scope path blocked: ${url.pathname}. Allowed paths: ${scope.includePaths.join(", ")}`);
   }
   if (scope.excludePaths?.some((path) => pathnames.some((pathname) => pathMatches(pathname, path)))) {
     throw new Error(`Excluded path blocked: ${url.pathname}.`);
+  }
+}
+
+export function assertOriginInScope(value, scope) {
+  const url = new URL(value);
+  if (!/^https?:$/.test(url.protocol) || url.username || url.password) {
+    throw new Error("Only clean http(s) URLs without embedded credentials may be scanned.");
+  }
+  if (!scope.allowedOrigins.some((pattern) => originMatches(url, pattern))) {
+    throw new Error(`Out-of-scope navigation blocked: ${url.origin}. Allowed origins: ${scope.allowedOrigins.join(", ")}`);
   }
 }
 
@@ -40,7 +45,7 @@ function normalizeOriginPattern(origin) {
     throw new Error(`Scope origin must be a clean http(s) origin or wildcard subdomain: ${origin}`);
   }
   const host = match[2].toLowerCase();
-  if (host.startsWith("*.") && host.slice(2).includes("*")) {
+  if (host.startsWith("*.") && (!host.slice(2) || host.slice(2).startsWith(".") || host.slice(2).includes("*"))) {
     throw new Error(`Scope wildcard may only use one leading *.: ${origin}`);
   }
   if (host.includes("*") && !host.startsWith("*.")) {
